@@ -1,0 +1,81 @@
+/* ── Page layout ────────────────────────────────────────────────────── */
+.admin-container {
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section-card {
+  width: 100%;
+}
+
+/* ── Card avatar icons ──────────────────────────────────────────────── */
+.icon-lock  { color: #3f51b5; }
+.icon-add   { color: #388e3c; }
+.icon-audit { color: #f57c00; }
+
+/* ── Tables ─────────────────────────────────────────────────────────── */
+.full-table {
+  width: 100%;
+  margin-top: 16px;
+}
+
+/* ── Inline code paths ──────────────────────────────────────────────── */
+.path {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.85rem;
+}
+
+/* ── Add restriction form ───────────────────────────────────────────── */
+.add-form {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  max-width: 540px;
+}
+
+.add-form mat-form-field {
+  width: 100%;
+}
+
+.submit-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Shared helpers ─────────────────────────────────────────────────── */
+.loading-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0;
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 0.9rem;
+}
+
+.no-data {
+  padding: 24px;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.4);
+  font-style: italic;
+}
+
+.mono {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.82rem;
+  cursor: default;
+}
+
+.dim {
+  color: rgba(0, 0, 0, 0.35);
+  font-style: italic;
+}

@@ -1,0 +1,160 @@
+version: "3.9"
+
+networks:
+  internal:
+    driver: bridge
+  frontend-net:
+    driver: bridge
+
+volumes:
+  qdrant_data:
+
+services:
+
+  # ── Keycloak ── Identity / OIDC emulating AD+IIQ
+  # Backed by Neon (NEON_KEYCLOAK_URL in .env)
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: securechat-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: ${NEON_KEYCLOAK_URL}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-changeme}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - internal
+      - frontend-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/realms/master || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+  # ── Qdrant ── Vector database with metadata filtering
+  qdrant:
+    image: qdrant/qdrant:v1.9.0
+    container_name: securechat-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-changeme}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── DLP Service ── Presidio-powered redaction (internal only, no public port)
+  dlp-service:
+    build:
+      context: ../dlp-service
+      dockerfile: Dockerfile
+    container_name: securechat-dlp
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── Ingestion ── Python pipeline
+  # Runs the embed API (:8001) permanently so the backend can embed user prompts.
+  # One-shot ingest: docker compose run --rm ingestion python -m src.main --manifest manifests/example-manifest.yaml
+  ingestion:
+    build:
+      context: ../ingestion
+      dockerfile: Dockerfile
+    container_name: securechat-ingestion
+    restart: unless-stopped
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-changeme}
+      EMBEDDING_MODEL: all-MiniLM-L6-v2
+      EMBED_SERVICE_PORT: 8001
+      UVICORN_WORKERS: 2
+    volumes:
+      - ../ingestion/data:/app/data:ro
+      - ../ingestion/manifests:/app/manifests:ro
+    ports:
+      - "8001:8001"   # Embed endpoint consumed by backend
+    networks:
+      - internal
+    depends_on:
+      qdrant:
+        condition: service_started
+
+  # ── Backend ── Spring Boot API
+  # App data stored in Neon (NEON_APP_URL)
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: securechat-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: enterprise-securechat
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-changeme}
+      QDRANT_COLLECTION: enterprise_knowledge
+      EMBED_SERVICE_URL: http://ingestion:8001
+      DLP_SERVICE_URL: http://dlp-service:8000
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL: claude-sonnet-4-6
+    depends_on:
+      keycloak:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    networks:
+      - internal
+      - frontend-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Frontend ── Angular chat UI (served by nginx)
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: securechat-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "4200:80"
+    networks:
+      - frontend-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

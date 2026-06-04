@@ -1,0 +1,62 @@
+<mat-sidenav-container class="app-container">
+
+  <!-- Sidebar: past conversations -->
+  <mat-sidenav #sidenav mode="side" opened class="app-sidenav">
+    <div class="sidenav-header">
+      <span class="sidenav-title">Conversations</span>
+      <a mat-icon-button routerLink="/" matTooltip="New chat">
+        <mat-icon>add</mat-icon>
+      </a>
+    </div>
+
+    <mat-nav-list dense>
+      @for (conv of conversations; track conv.id) {
+        <mat-list-item>
+          <mat-icon matListItemIcon>chat_bubble_outline</mat-icon>
+          <span matListItemTitle>{{ conv.createdAt | date:'M/d, h:mm a' }}</span>
+        </mat-list-item>
+      } @empty {
+        <mat-list-item>
+          <span matListItemTitle class="empty-label">No past conversations</span>
+        </mat-list-item>
+      }
+    </mat-nav-list>
+  </mat-sidenav>
+
+  <!-- Main content -->
+  <mat-sidenav-content class="app-content">
+
+    <mat-toolbar color="primary" class="main-toolbar">
+      <button mat-icon-button (click)="sidenav.toggle()" matTooltip="Toggle sidebar">
+        <mat-icon>menu</mat-icon>
+      </button>
+      <span class="toolbar-title">Enterprise SecureChat</span>
+      <span class="flex-spacer"></span>
+
+      @if (isAdmin) {
+        <a mat-button routerLink="/admin" class="admin-link">
+          <mat-icon>admin_panel_settings</mat-icon>
+          Admin
+        </a>
+      }
+
+      <button mat-icon-button [matMenuTriggerFor]="userMenu" matTooltip="Account">
+        <mat-icon>account_circle</mat-icon>
+      </button>
+      <mat-menu #userMenu="matMenu">
+        <div class="user-menu-name">{{ username }}</div>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="logout()">
+          <mat-icon>logout</mat-icon>
+          <span>Sign out</span>
+        </button>
+      </mat-menu>
+    </mat-toolbar>
+
+    <div class="content-area">
+      <router-outlet></router-outlet>
+    </div>
+
+  </mat-sidenav-content>
+
+</mat-sidenav-container>

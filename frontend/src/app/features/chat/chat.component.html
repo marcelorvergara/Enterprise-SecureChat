@@ -1,0 +1,110 @@
+<div class="chat-container">
+
+  <!-- ── Message thread ──────────────────────────────────────────── -->
+  <div class="message-thread" #messageThread>
+
+    @if (messages.length === 0 && !loading) {
+      <div class="empty-state">
+        <mat-icon class="empty-icon">smart_toy</mat-icon>
+        <h2>Enterprise SecureChat</h2>
+        <p>Ask a question about your organisation's documents.</p>
+        <p class="empty-hint">Your access is governed by your assigned role.</p>
+      </div>
+    }
+
+    @for (msg of messages; track $index) {
+      <div class="message-row" [class.user-row]="msg.role === 'user'" [class.assistant-row]="msg.role === 'assistant'">
+        <div class="bubble" [class.user-bubble]="msg.role === 'user'" [class.assistant-bubble]="msg.role === 'assistant'">
+
+          <!-- Assistant header with indicators -->
+          @if (msg.role === 'assistant') {
+            <div class="bubble-header">
+              <mat-icon class="header-icon model-icon">smart_toy</mat-icon>
+              <span class="header-label">Assistant</span>
+              @if (msg.fgaApplied) {
+                <mat-icon
+                  class="header-icon lock-icon"
+                  [matTooltip]="'FGA restrictions applied — some documents were excluded from context'">
+                  lock
+                </mat-icon>
+              }
+              @if (msg.dlpEntitiesRedacted > 0) {
+                <span class="dlp-badge" [matTooltip]="msg.dlpEntitiesRedacted + ' sensitive entities redacted by DLP'">
+                  <mat-icon class="dlp-icon">security</mat-icon>
+                  {{ msg.dlpEntitiesRedacted }}
+                </span>
+              }
+            </div>
+          }
+
+          <!-- Content -->
+          @if (msg.role === 'assistant') {
+            <div class="message-content markdown-body" [innerHTML]="msg.content | safeMarkdown"></div>
+          } @else {
+            <div class="message-content">{{ msg.content }}</div>
+          }
+
+          <!-- Source citations -->
+          @if (msg.sources.length > 0) {
+            <div class="sources-section">
+              <span class="sources-label">Sources</span>
+              <mat-chip-set>
+                @for (src of msg.sources; track src.sourceFile) {
+                  <mat-chip [matTooltip]="src.subjectPath + ' · score: ' + src.score.toFixed(2)">
+                    <mat-icon matChipAvatar>description</mat-icon>
+                    {{ src.sourceFile }}
+                    @if (src.pageNumber) {
+                      <span class="chip-detail"> · p.{{ src.pageNumber }}</span>
+                    }
+                    @if (src.sheetName) {
+                      <span class="chip-detail"> · {{ src.sheetName }}</span>
+                    }
+                  </mat-chip>
+                }
+              </mat-chip-set>
+            </div>
+          }
+
+        </div>
+      </div>
+    }
+
+    <!-- Typing indicator -->
+    @if (loading) {
+      <div class="message-row assistant-row">
+        <div class="bubble assistant-bubble typing-bubble">
+          <mat-spinner diameter="18"></mat-spinner>
+          <span class="typing-text">Thinking…</span>
+        </div>
+      </div>
+    }
+
+  </div>
+
+  <!-- ── Input area ──────────────────────────────────────────────── -->
+  <div class="input-area">
+    <mat-form-field appearance="outline" class="message-field">
+      <mat-label>Ask a question…</mat-label>
+      <textarea
+        matInput
+        cdkTextareaAutosize
+        [cdkAutosizeMinRows]="1"
+        [cdkAutosizeMaxRows]="6"
+        [formControl]="messageControl"
+        (keydown)="onKeydown($event)"
+        [disabled]="loading"
+        placeholder="Enter to send · Shift+Enter for new line">
+      </textarea>
+    </mat-form-field>
+    <button
+      mat-fab
+      color="primary"
+      class="send-btn"
+      (click)="sendMessage()"
+      [disabled]="loading || !messageControl.value?.trim()"
+      matTooltip="Send (Enter)">
+      <mat-icon>send</mat-icon>
+    </button>
+  </div>
+
+</div>

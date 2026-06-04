@@ -1,0 +1,73 @@
+server:
+  port: 3000
+
+spring:
+  application:
+    name: enterprise-securechat-backend
+
+  # ── Neon PostgreSQL ──────────────────────────────────────────────────────────
+  # SPRING_DATASOURCE_URL must be in JDBC format:
+  #   jdbc:postgresql://ep-xxxx.region.aws.neon.tech/fga_registry?sslmode=require
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # Keep one idle connection warm — avoids Neon cold-start on first request
+      minimum-idle: 1
+      maximum-pool-size: 5
+      # Keepalive prevents Neon from closing idle connections (Neon idles after 5 min)
+      keepalive-time: 60000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      # Schema is managed by infra/migrations/init.sql applied via Neon SQL Editor
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # ── Keycloak JWT resource server ─────────────────────────────────────────────
+  # Spring Security fetches Keycloak's public keys from this JWKS endpoint to
+  # validate every incoming Bearer token — no shared secret needed.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_URL:http://keycloak:8080}/realms/enterprise-securechat/protocol/openid-connect/certs
+
+# ── External service URLs ────────────────────────────────────────────────────
+keycloak:
+  url: ${KEYCLOAK_URL:http://keycloak:8080}
+
+qdrant:
+  url: ${QDRANT_URL:http://qdrant:6333}
+  api-key: ${QDRANT_API_KEY:changeme}
+  collection: ${QDRANT_COLLECTION:enterprise_knowledge}
+
+embed-service:
+  url: ${EMBED_SERVICE_URL:http://ingestion:8001}
+  connect-timeout: 2000
+  read-timeout: 5000
+
+dlp-service:
+  url: ${DLP_SERVICE_URL:http://dlp-service:8000}
+
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY}
+  model: ${CLAUDE_MODEL:claude-sonnet-4-6}
+
+# ── Actuator ─────────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
