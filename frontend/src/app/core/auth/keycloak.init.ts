@@ -14,6 +14,7 @@ function initKeycloak(): () => Promise<boolean> {
     keycloak.init({
       onLoad: 'login-required',
       checkLoginIframe: false,
+      scope: 'openid' 
     });
 }
 

@@ -40,11 +40,22 @@
         </a>
       }
 
-      <button mat-icon-button [matMenuTriggerFor]="userMenu" matTooltip="Account">
-        <mat-icon>account_circle</mat-icon>
+      <button mat-button [matMenuTriggerFor]="userMenu" class="user-chip" matTooltip="Account">
+        <mat-icon class="user-chip-icon">account_circle</mat-icon>
+        <span class="user-chip-info">
+          <span class="user-chip-name">{{ username }}</span>
+          @if (primaryRole) {
+            <span class="user-chip-role">{{ primaryRole }}</span>
+          }
+        </span>
       </button>
       <mat-menu #userMenu="matMenu">
-        <div class="user-menu-name">{{ username }}</div>
+        <div class="user-menu-header">
+          <span class="user-menu-name">{{ username }}</span>
+          @if (primaryRole) {
+            <span class="user-menu-role">{{ primaryRole }}</span>
+          }
+        </div>
         <mat-divider></mat-divider>
         <button mat-menu-item (click)="logout()">
           <mat-icon>logout</mat-icon>

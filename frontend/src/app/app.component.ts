@@ -38,9 +38,23 @@ export class AppComponent implements OnInit, OnDestroy {
   private refreshSub?: Subscription;
 
   conversations: Conversation[] = [];
-  readonly username = keycloak.tokenParsed?.['preferred_username'] ?? 'User';
+  username = keycloak.tokenParsed?.['preferred_username'] ?? 'User';
+
+  get primaryRole(): string {
+    const SYSTEM = new Set(['offline_access', 'uma_authorization']);
+    const roles = (keycloak.realmAccess?.roles ?? [])
+      .filter(r => !SYSTEM.has(r) && !r.startsWith('default-roles-'));
+    const specific = roles.filter(r => r !== 'employee');
+    return specific[0] ?? roles[0] ?? '';
+  }
 
   ngOnInit(): void {
+    console.log('tokenParsed', keycloak.tokenParsed);
+    this.username =
+      keycloak.tokenParsed?.['preferred_username'] ??
+      keycloak.tokenParsed?.['name'] ??
+      keycloak.tokenParsed?.['email'] ??
+      'User';
     this.loadConversations();
     this.refreshSub = this.chatService.refresh$.subscribe(() => this.loadConversations());
   }
