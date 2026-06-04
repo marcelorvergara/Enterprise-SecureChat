@@ -81,8 +81,29 @@
 
   </div>
 
+  <!-- ── File chip strip (visible only when a file is attached) ─── -->
+  @if (attachedFile) {
+    <div class="file-chip-strip">
+      <mat-chip-set>
+        <mat-chip>
+          <mat-icon matChipAvatar>description</mat-icon>
+          {{ attachedFile.name }}
+          <button matChipRemove (click)="removeFile()"><mat-icon>cancel</mat-icon></button>
+        </mat-chip>
+      </mat-chip-set>
+    </div>
+  }
+
   <!-- ── Input area ──────────────────────────────────────────────── -->
   <div class="input-area">
+    <input type="file" #fileInput hidden
+      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.tiff,.tif"
+      (change)="onFileSelected($event)">
+    <button mat-icon-button class="attach-btn" type="button"
+      (click)="fileInput.click()" [disabled]="loading"
+      matTooltip="Attach a document for compliance verification">
+      <mat-icon>attach_file</mat-icon>
+    </button>
     <mat-form-field appearance="outline" class="message-field">
       <mat-label>Ask a question…</mat-label>
       <textarea

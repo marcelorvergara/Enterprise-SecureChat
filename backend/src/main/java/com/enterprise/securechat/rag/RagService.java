@@ -127,6 +127,86 @@ public class RagService {
         );
     }
 
+    /**
+     * RAG pipeline variant that injects an uploaded document into the system prompt for
+     * compliance verification. Raw document text is never persisted — only a filename hint.
+     * NOT @Transactional for the same reason as chat().
+     */
+    public ChatResponse chatWithDocument(ChatRequest request, String documentText,
+                                         String documentFilename, Authentication auth) {
+        var jwt = (Jwt) auth.getPrincipal();
+        var userSub = jwt.getSubject();
+
+        var roles = auth.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring(5))
+                .toList();
+
+        List<String> restrictedPaths = fgaService.getRestrictedPaths(roles);
+        Map<String, Object> qdrantFilter = fgaService.buildQdrantFilter(restrictedPaths);
+
+        var conversation = conversationService.getOrCreate(request.conversationId(), userSub);
+
+        var vector = embedClient.embed(request.message());
+        var hits = qdrantClient.search(vector, qdrantFilter, TOP_K);
+
+        var sources = hits.stream()
+                .map(hit -> new SourceCitation(
+                        payloadString(hit.payload(), "source_file"),
+                        payloadString(hit.payload(), "subject_path"),
+                        payloadInt(hit.payload(), "page_number"),
+                        payloadString(hit.payload(), "sheet_name"),
+                        hit.score()
+                ))
+                .toList();
+
+        var contextChunks = hits.stream()
+                .map(hit -> payloadString(hit.payload(), "chunk_text"))
+                .filter(text -> text != null && !text.isBlank())
+                .collect(Collectors.joining("\n\n---\n\n"));
+
+        var systemPrompt = buildSystemPromptWithDocument(contextChunks, documentText, documentFilename);
+
+        var history = conversationService.getHistory(conversation.getId(), HISTORY_TURNS);
+        var claudeMessages = new ArrayList<ClaudeService.ConversationMessage>();
+        for (var msg : history) {
+            claudeMessages.add(new ClaudeService.ConversationMessage(msg.getRole(), msg.getContent()));
+        }
+        claudeMessages.add(new ClaudeService.ConversationMessage("user", request.message()));
+
+        var rawAnswer = claudeService.complete(systemPrompt, claudeMessages, 2048);
+        var dlpResult = dlpClient.analyze(rawAnswer);
+
+        var userMessageContent = request.message() + " [Attached: " + documentFilename + "]";
+        conversationService.saveUserMessage(conversation.getId(), userMessageContent);
+        conversationService.saveAssistantMessage(conversation.getId(), dlpResult.cleanedText(), sources);
+
+        auditService.log(userSub, roles, restrictedPaths, request.message());
+
+        return new ChatResponse(
+                dlpResult.cleanedText(),
+                conversation.getId(),
+                sources,
+                !restrictedPaths.isEmpty(),
+                dlpResult.entitiesRedacted()
+        );
+    }
+
+    private String buildSystemPromptWithDocument(String contextChunks, String documentText,
+                                                  String documentFilename) {
+        var knowledge = (contextChunks == null || contextChunks.isBlank())
+                ? "No relevant documents were found in the knowledge base."
+                : contextChunks;
+        return "You are an enterprise knowledge assistant and document compliance verifier.\n\n"
+             + "ENTERPRISE KNOWLEDGE BASE (verified ground truth):\n" + knowledge + "\n\n"
+             + "USER-SUBMITTED DOCUMENT FOR VERIFICATION:\nFilename: " + documentFilename + "\n"
+             + documentText + "\n\n"
+             + "Compare the submitted document against the knowledge base. "
+             + "Identify discrepancies, errors, outdated figures, or compliance issues. "
+             + "If the knowledge base lacks coverage on the submitted topic, say so clearly.";
+    }
+
     private String buildSystemPrompt(String contextChunks) {
         if (contextChunks == null || contextChunks.isBlank()) {
             return """

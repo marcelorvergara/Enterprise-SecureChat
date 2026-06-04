@@ -1,0 +1,57 @@
+---
+config:
+  theme: mc
+id: b84c2ee5-7864-4b95-8905-1aaaf06e2d9d
+---
+flowchart TD
+    classDef user fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef frontend fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+    classDef backend fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    classDef identity fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef data fill:#fffde7,stroke:#fbc02d,stroke-width:2px;
+    classDef ai fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px;
+
+    User((User)):::user
+    UI[Angular Frontend]:::frontend
+
+    subgraph Identity [Identity Layer]
+        Keycloak[Keycloak OIDC]:::identity
+        Postgres[(PostgreSQL · Neon)]:::identity
+    end
+
+    Ingestion[Ingestion Pipeline<br/>PDFs · Excel · Images → Vectors]:::data
+
+    subgraph Backend [Spring Boot]
+        API[API Gateway]:::backend
+        Filter[JWT + Rate Limit Filter]:::backend
+        RAG[RAG Orchestrator]:::backend
+        DLP[DLP Post-Processor]:::backend
+    end
+
+    subgraph Storage [Storage & AI]
+        VDB[(Qdrant · Vector DB)]:::data
+        LLM[Claude claude-sonnet-4-6]:::ai
+    end
+
+    Ingestion -->|Populates| VDB
+
+    User -->|1. Login| Keycloak
+    Keycloak -->|2. Issues JWT| UI
+    Keycloak -.->|Role data| Postgres
+
+    User -->|3. Question| UI
+    UI -->|4. Prompt + JWT| API
+
+    API --> Filter
+    Filter <-->|5. Restricted paths| Postgres
+    Filter -->|6. Validated request| RAG
+
+    RAG -->|7. Semantic search + FGA filter| VDB
+    VDB -->|8. Permitted chunks| RAG
+
+    RAG -->|9. Prompt + context| LLM
+    LLM -->|10. Draft answer| RAG
+
+    RAG -->|11. Scan for PII/financials| DLP
+    DLP -->|12. Clean answer| UI
+    UI -->|13. Display| User

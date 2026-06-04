@@ -30,7 +30,11 @@ public class ClaudeService {
      * @param messages     conversation history ending with the current user message
      */
     public String complete(String systemPrompt, List<ConversationMessage> messages) {
-        var request = new MessagesRequest(model, 1024, systemPrompt, messages);
+        return complete(systemPrompt, messages, 1024);
+    }
+
+    public String complete(String systemPrompt, List<ConversationMessage> messages, int maxTokens) {
+        var request = new MessagesRequest(model, maxTokens, systemPrompt, messages);
         var response = restClient.post()
                 .uri("/v1/messages")
                 .contentType(MediaType.APPLICATION_JSON)

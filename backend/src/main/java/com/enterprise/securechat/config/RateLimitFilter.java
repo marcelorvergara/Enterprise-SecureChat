@@ -34,8 +34,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
+        var uri = request.getRequestURI();
         if (!"POST".equalsIgnoreCase(request.getMethod())
-                || !"/api/chat".equals(request.getRequestURI())) {
+                || (!"/api/chat".equals(uri) && !"/api/chat/verify".equals(uri))) {
             chain.doFilter(request, response);
             return;
         }

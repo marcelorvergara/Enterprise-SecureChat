@@ -23,7 +23,7 @@ Architecture diagram: see [mermaid.txt](mermaid.txt).
 **Non-Goals (Phase 1)**
 - Real-time streaming responses (blocked by DLP requirement — see §8)
 - Multi-tenant isolation (single company deployment)
-- Document upload via the chat UI (documents are ingested via a CLI pipeline)
+- Permanent document ingestion via the chat UI (documents for the knowledge base are indexed via the CLI pipeline; the chat UI supports ephemeral one-time verification only — see `POST /api/chat/verify`)
 - Fine-grained per-document ACLs (restrictions are path-prefix based)
 
 ---
@@ -37,7 +37,7 @@ Architecture diagram: see [mermaid.txt](mermaid.txt).
 | **Identity** | Keycloak 24 (Docker) | OIDC token issuer, user/role management, AD emulation |
 | **FGA Registry** | Neon PostgreSQL | Stores role → subject_path restriction mappings and audit logs |
 | **Vector DB** | Qdrant 1.9 (Docker) | Stores document chunk embeddings with FGA metadata for filtered search |
-| **Ingestion** | Python 3.11 | Parses PDFs/Excel/images, chunks, embeds, upserts into Qdrant with FGA metadata |
+| **Ingestion** | Python 3.11 | Parses PDFs/Excel/images/text, chunks, embeds, upserts into Qdrant with FGA metadata; also exposes `/parse` for ephemeral document text extraction |
 | **DLP Service** | Python FastAPI + Presidio | Scans LLM answers for PII and sensitive values, replaces with `[REDACTED]` |
 | **LLM** | Claude API (claude-sonnet-4-6) | Generates natural language answers from retrieved context |
 
@@ -130,6 +130,25 @@ Auth: Bearer JWT (Keycloak). **Blocking — not streaming (see §8).**
 }
 ```
 
+#### `POST /api/chat/verify`
+Auth: Bearer JWT (Keycloak). **Multipart form-data.** Accepts a file alongside a question and cross-references it against the knowledge base.
+```
+// Request (multipart/form-data)
+message:        "Is the IP address in this runbook correct?"
+conversationId: "uuid"  (optional)
+file:           <binary>  // .pdf, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif, .txt, .md, .csv
+
+// Response (same shape as /api/chat)
+{
+  "answer": "The runbook lists 10.0.0.99 but the knowledge base shows 192.168.1.50...",
+  "conversationId": "uuid",
+  "sources": [...],
+  "fgaApplied": true,
+  "dlpEntitiesRedacted": 2
+}
+```
+The uploaded file is parsed ephemerally via `ingestion:8001/parse` and injected into the Claude system prompt. It is **never written to the database** — only `message + "[Attached: filename]"` is persisted. FGA and DLP apply identically to regular chat. Max tokens: 2048.
+
 #### `GET /api/conversations`
 Returns list of conversations for the authenticated user.
 
@@ -164,6 +183,16 @@ Returns all roles and their restriction lists.
 
 // Response
 { "vector": [0.123, ...] }   // 384-dimensional float array
+```
+
+#### `POST /parse` (ingestion:8001)
+Accepts a multipart file upload. Dispatches to the appropriate parser by extension and returns the extracted plain text. Used exclusively by `ParseClient` to support `/api/chat/verify`. The file never touches Qdrant.
+```
+// Request (multipart/form-data)
+file: <binary>   // .pdf, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif, .txt, .md, .csv
+
+// Response
+{ "text": "...", "filename": "runbook.pdf" }
 ```
 
 ---
@@ -208,6 +237,7 @@ After the LLM generates its answer, the full text is sent to Presidio (DLP servi
 - **PDF** — PyMuPDF: extracts text per page, then chunked by `RecursiveCharacterTextSplitter`
 - **Excel** — openpyxl: row-based chunks with column headers prepended as context
 - **Image** — Pillow + pytesseract OCR: entire image OCR'd as a single chunk
+- **Plain text** (`.txt`, `.md`, `.csv`) — read as UTF-8; used only by `POST /parse` for ephemeral verification, never chunked or indexed
 
 ### Chunking
 - Chunk size: 512 tokens, overlap: 64 tokens

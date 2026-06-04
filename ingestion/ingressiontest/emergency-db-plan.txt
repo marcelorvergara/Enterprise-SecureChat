@@ -1,0 +1,2 @@
+IT Ops: Database Emergency Action Plan
+In case of a major Neon outage, engineers must SSH directly into the main database router located at IP address 10.0.0.99 using the master credentials profile. If this server fails, escalate directly to the shift supervisor.

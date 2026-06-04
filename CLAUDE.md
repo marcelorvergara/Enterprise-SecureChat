@@ -10,7 +10,8 @@ Browser → Angular (nginx:4200)
         Spring Boot (3000)
          ├─ JWT validation ← Keycloak (8080)  ← Neon (keycloak DB)
          ├─ FGA lookup ──────────────────────── Neon (fga_registry DB)
-         ├─ Embed call → Ingestion (8001)
+         ├─ Embed call → Ingestion (8001) /embed
+         ├─ Parse call → Ingestion (8001) /parse   ← /api/chat/verify only
          ├─ Qdrant search (must_not filter) ── Qdrant (6333)
          ├─ Claude API ──────────────────────── Anthropic cloud
          └─ DLP scrub → DLP service (8000, internal-only)
@@ -80,11 +81,11 @@ uvicorn src.embed_api:app --host 0.0.0.0 --port 8001            # persistent emb
 Enterprise-SecureChat/
 ├── backend/src/main/java/com/enterprise/securechat/
 │   ├── audit/          RestrictionAuditLog entity + AuditService (SHA-256 hashing)
-│   ├── config/         RestClientConfig (4 typed RestClient beans), SecurityConfig
+│   ├── config/         RestClientConfig (5 typed RestClient beans), SecurityConfig
 │   ├── conversation/   Conversation + Message entities, ConversationService/Controller
 │   ├── fga/            FgaService — restriction lookup + Qdrant filter builder
 │   ├── health/         HealthController
-│   ├── rag/            RagController, RagService, EmbedClient, QdrantSearchClient,
+│   ├── rag/            RagController, RagService, ParseClient, EmbedClient, QdrantSearchClient,
 │   │                   ClaudeService, DlpClient, dto/
 │   └── security/       RolesExtractor (pulls realm_access.roles from JWT)
 ├── dlp-service/src/
@@ -102,7 +103,7 @@ Enterprise-SecureChat/
 │   ├── chunker.py      LangChain RecursiveCharacterTextSplitter (512 tok / 64 overlap)
 │   ├── embedder.py     all-MiniLM-L6-v2
 │   ├── qdrant_writer.py  upsert + delete_by_doc_id for idempotency
-│   └── embed_api.py    Uvicorn FastAPI — POST /embed (2 pre-forked workers)
+│   └── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse (2 pre-forked workers)
 ├── infra/
 │   ├── docker-compose.yml
 │   ├── migrations/init.sql      Apply once via Neon SQL Editor
@@ -136,6 +137,12 @@ The ingestion pipeline writes `ancestor_paths: ["finance", "finance/payroll"]` f
 
 ### 7. Ingestion container runs the embed API persistently — no `profiles:` key
 The `ingestion` service in docker-compose has **no profile** so it starts with `docker compose up -d` and keeps the `/embed` endpoint available at `:8001`. The backend calls this for every user prompt. If the ingestion container is not running, all chat requests fail with `UnknownHostException: ingestion`. One-shot document indexing is done with `docker compose run --rm ingestion python -m src.main --manifest ...` (no `--profile` flag needed).
+
+### 9. `/api/chat/verify` — document text is never persisted
+`RagService.chatWithDocument()` stores `request.message() + " [Attached: filename]"` as the user message. The raw document text extracted by `ParseClient` is injected into the Claude system prompt for that single request only and discarded afterwards. It never passes through `ConversationService`, `AuditService`, or any DB operation. The same DLP pass that covers `/api/chat` also covers `/api/chat/verify` — raw Claude output does not leave the backend.
+
+### 10. `ClaudeService.complete()` — `maxTokens` overload
+The no-arg overload defaults to 1024 tokens (sufficient for regular chat). `/api/chat/verify` calls the two-arg overload with `maxTokens=2048` so compliance comparison reports are not truncated. Do not increase the default — 1024 is intentional for chat responses.
 
 ### 8. FINANCIAL_FIGURE recognizer only catches amounts with explicit currency markers
 The custom Presidio recognizer (`dlp-service/src/custom_recognizers/financial_figures.py`) matches patterns that include a currency symbol (`$`, `€`, `R$`), a currency code prefix (`USD`, `EUR`, `BRL`), or a magnitude qualifier (`million`, `billion`, `thousand`). A bare number like `450,000` with no currency marker is **not** redacted. This is a known gap. Fix by adding a standalone large-number pattern (e.g. numbers ≥ 1,000 with comma separators in a financial context) or by having the system prompt instruct Claude to always include currency symbols when citing amounts.
@@ -173,6 +180,7 @@ Default roles: `admin`, `employee`, `finance-analyst`, `hr-manager`, `it-ops`.
 | **M5** | ✅ Complete | Angular 17 frontend: Keycloak OIDC, JWT interceptor, Material shell, chat UI, SafeMarkdownPipe, admin stub |
 | **M6** | ✅ Complete | `AdminController` (restriction CRUD, `@PreAuthorize("hasRole('admin')")`), Bucket4j rate limiting (20 req/min per `sub`), security headers, Angular admin panel |
 | **M7** | ✅ Complete | JUnit 5 + Mockito backend tests (`FgaServiceTest`, `RagServiceTest`), pytest ingestion tests (chunker, ancestor_paths, deterministic IDs), pytest DLP tests (FINANCIAL_FIGURE recognizer + redaction), root `README.md` |
+| **M8** | ✅ Complete | Document Verification: ingestion `POST /parse` endpoint (PDF/Excel/image/text), `ParseClient`, `RagService.chatWithDocument()`, `POST /api/chat/verify` (multipart), `ClaudeService` maxTokens overload (2048), Angular file attachment UI with chip strip |
 
 ## Environment Variables Reference
 

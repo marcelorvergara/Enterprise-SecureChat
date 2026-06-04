@@ -5,6 +5,7 @@ An enterprise AI chat platform that answers questions using your company's own d
 - **FGA (Fine-Grained Authorization)** — Qdrant-level path filtering ensures users only retrieve documents they are permitted to read. There is no application-layer bypass.
 - **DLP (Data Loss Prevention)** — Microsoft Presidio scrubs PII and financial figures from every LLM answer before it reaches the browser. Raw Claude output never leaves the backend.
 - **Audit Trail** — Every query logs the user, their roles, the paths that were blocked, and a SHA-256 hash of the prompt. The raw prompt is never stored.
+- **Document Verification** — Upload a file (PDF, Excel, image, or plain text) and ask the system to cross-reference it against the indexed knowledge base. The document is parsed ephemerally, injected into the Claude context, and never persisted.
 
 ---
 
@@ -255,9 +256,27 @@ Presidio's NER models (spaCy `en_core_web_lg`) require full sentence context to 
 
 The DLP service redacts: `PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `CREDIT_CARD`, plus a custom `FINANCIAL_FIGURE` recognizer that catches `$125,000`, `€12.50`, `R$1.234,56`, `45 million USD`, `EUR 12,000`, and similar patterns.
 
+### Document Verification
+
+The paperclip button in the chat input opens a file picker. After attaching a file, send your question as normal — the backend routes the request through `POST /api/chat/verify` instead of `POST /api/chat`.
+
+**How it works:**
+
+1. The file is sent to the ingestion service's `POST /parse` endpoint, which runs the appropriate parser (PDF/Excel/image/text) and returns raw text.
+2. The raw text is injected into Claude's system prompt alongside the RAG chunks from the knowledge base.
+3. Claude compares the submitted document against the verified ground truth and flags discrepancies.
+4. The full DLP pass runs on Claude's response — any PII or financial figures in the compliance report are redacted before reaching the browser.
+5. Only `message + "[Attached: filename]"` is stored in conversation history. The document text is never persisted.
+
+**Supported file types:** `.pdf`, `.xlsx`, `.xls`, `.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif`, `.txt`, `.md`, `.csv`
+
+**Token budget:** The verify endpoint requests `max_tokens=2048` from Claude (vs 1024 for regular chat) to ensure full compliance reports are not truncated.
+
+---
+
 ### Rate Limiting
 
-`POST /api/chat` is limited to **20 requests per minute per user** (`sub` JWT claim). Bucket4j uses in-memory token buckets refilled in full every 60 seconds. Exceeding the limit returns HTTP 429 with:
+`POST /api/chat` and `POST /api/chat/verify` share the same **20 requests per minute per user** (`sub` JWT claim) bucket. Bucket4j uses in-memory token buckets refilled in full every 60 seconds. Exceeding the limit returns HTTP 429 with:
 
 ```json
 { "error": "Rate limit exceeded. Maximum 20 requests per minute." }
@@ -338,7 +357,7 @@ Enterprise-SecureChat/
 │   ├── conversation/   Conversation + Message entities, ConversationService
 │   ├── fga/            FgaService, Role/RoleRestriction entities + repos
 │   ├── health/         HealthController
-│   ├── rag/            RagService, ClaudeService, EmbedClient,
+│   ├── rag/            RagService, ClaudeService, ParseClient, EmbedClient,
 │   │                   QdrantSearchClient, DlpClient, dto/
 │   └── security/       RolesExtractor (Keycloak realm_access.roles → ROLE_)
 ├── backend/src/test/java/com/enterprise/securechat/
@@ -361,7 +380,7 @@ Enterprise-SecureChat/
 │   ├── chunker.py      512-token chunks / 64-token overlap
 │   ├── embedder.py     all-MiniLM-L6-v2 (384-dim)
 │   ├── qdrant_writer.py  upsert + delete_by_doc_id (idempotent)
-│   └── embed_api.py    Uvicorn FastAPI — POST /embed (2 pre-forked workers)
+│   └── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse (2 pre-forked workers)
 ├── ingestion/tests/
 │   ├── test_chunker.py
 │   └── test_qdrant_writer.py

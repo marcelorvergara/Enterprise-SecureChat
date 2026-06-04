@@ -52,6 +52,7 @@ interface ChatMessage {
 export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   @ViewChild('messageThread') private messageThread!: ElementRef<HTMLDivElement>;
   @ViewChild(CdkTextareaAutosize) private autosize!: CdkTextareaAutosize;
+  @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
 
   private readonly chatService = inject(ChatService);
   private readonly route = inject(ActivatedRoute);
@@ -62,6 +63,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   readonly messageControl = new FormControl('');
   loading = false;
   conversationId?: string;
+  attachedFile?: File;
 
   private pendingScroll = false;
 
@@ -85,6 +87,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.conversationId = undefined;
     this.loading = false;
     this.pendingScroll = false;
+    this.attachedFile = undefined;
   }
 
   private loadHistory(conversationId: string): void {
@@ -112,6 +115,17 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
   }
 
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) this.attachedFile = file;
+    input.value = '';
+  }
+
+  removeFile(): void {
+    this.attachedFile = undefined;
+  }
+
   onKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -123,9 +137,16 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     const text = this.messageControl.value?.trim();
     if (!text || this.loading) return;
 
+    const fileToSend = this.attachedFile;
+    this.attachedFile = undefined;
+
+    const displayContent = fileToSend
+      ? `${text}\n[Attached: ${fileToSend.name}]`
+      : text;
+
     this.messages.push({
       role: 'user',
-      content: text,
+      content: displayContent,
       sources: [],
       fgaApplied: false,
       dlpEntitiesRedacted: 0,
@@ -135,37 +156,39 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.pendingScroll = true;
 
     const wasNew = !this.conversationId;
-    this.chatService
-      .sendMessage({ message: text, conversationId: this.conversationId })
-      .subscribe({
-        next: response => {
-          this.conversationId = response.conversationId;
-          if (wasNew) {
-            this.chatService.notifyConversationCreated();
-            this.router.navigate(['/c', response.conversationId], { replaceUrl: true });
-          }
-          this.messages.push({
-            role: 'assistant',
-            content: response.answer,
-            sources: response.sources ?? [],
-            fgaApplied: response.fgaApplied,
-            dlpEntitiesRedacted: response.dlpEntitiesRedacted,
-          });
-          this.loading = false;
-          this.pendingScroll = true;
-        },
-        error: () => {
-          this.messages.push({
-            role: 'assistant',
-            content: 'Something went wrong. Please try again.',
-            sources: [],
-            fgaApplied: false,
-            dlpEntitiesRedacted: 0,
-          });
-          this.loading = false;
-          this.pendingScroll = true;
-        },
-      });
+    const request$ = fileToSend
+      ? this.chatService.verifyDocument(text, this.conversationId, fileToSend)
+      : this.chatService.sendMessage({ message: text, conversationId: this.conversationId });
+
+    request$.subscribe({
+      next: response => {
+        this.conversationId = response.conversationId;
+        if (wasNew) {
+          this.chatService.notifyConversationCreated();
+          this.router.navigate(['/c', response.conversationId], { replaceUrl: true });
+        }
+        this.messages.push({
+          role: 'assistant',
+          content: response.answer,
+          sources: response.sources ?? [],
+          fgaApplied: response.fgaApplied,
+          dlpEntitiesRedacted: response.dlpEntitiesRedacted,
+        });
+        this.loading = false;
+        this.pendingScroll = true;
+      },
+      error: () => {
+        this.messages.push({
+          role: 'assistant',
+          content: 'Something went wrong. Please try again.',
+          sources: [],
+          fgaApplied: false,
+          dlpEntitiesRedacted: 0,
+        });
+        this.loading = false;
+        this.pendingScroll = true;
+      },
+    });
   }
 
   private scrollToBottom(): void {

@@ -54,6 +54,15 @@ export class ChatService {
     return this.http.get<Message[]>(`/api/conversations/${conversationId}/messages`);
   }
 
+  verifyDocument(message: string, conversationId: string | undefined, file: File): Observable<ChatResponse> {
+    const form = new FormData();
+    form.append('message', message);
+    if (conversationId) form.append('conversationId', conversationId);
+    form.append('file', file, file.name);
+    // Do NOT set Content-Type manually — HttpClient sets it with the multipart boundary
+    return this.http.post<ChatResponse>('/api/chat/verify', form);
+  }
+
   notifyConversationCreated(): void {
     this.conversationsRefresh$.next();
   }
