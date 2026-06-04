@@ -11,10 +11,10 @@
 
     <mat-nav-list dense>
       @for (conv of conversations; track conv.id) {
-        <mat-list-item>
+        <a mat-list-item [routerLink]="['/c', conv.id]" routerLinkActive="active-conv" class="conv-item">
           <mat-icon matListItemIcon>chat_bubble_outline</mat-icon>
           <span matListItemTitle>{{ conv.createdAt | date:'M/d, h:mm a' }}</span>
-        </mat-list-item>
+        </a>
       } @empty {
         <mat-list-item>
           <span matListItemTitle class="empty-label">No past conversations</span>

@@ -14,4 +14,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<Message> findLatestByConversationId(
             @Param("conversationId") UUID conversationId,
             Pageable pageable);
+
+    @Query("SELECT m FROM Message m WHERE m.conversationId = :conversationId ORDER BY m.createdAt ASC")
+    List<Message> findAllByConversationIdOrderByCreatedAtAsc(@Param("conversationId") UUID conversationId);
 }

@@ -1,5 +1,6 @@
-import { Component, inject, OnInit } from '@angular/core';
-import { RouterOutlet, RouterLink } from '@angular/router';
+import { Component, inject, OnInit, OnDestroy } from '@angular/core';
+import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { DatePipe } from '@angular/common';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatSidenavModule } from '@angular/material/sidenav';
@@ -18,6 +19,7 @@ import { keycloak } from './core/auth/keycloak.init';
   imports: [
     RouterOutlet,
     RouterLink,
+    RouterLinkActive,
     DatePipe,
     MatToolbarModule,
     MatSidenavModule,
@@ -31,13 +33,23 @@ import { keycloak } from './core/auth/keycloak.init';
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   private readonly chatService = inject(ChatService);
+  private refreshSub?: Subscription;
 
   conversations: Conversation[] = [];
   readonly username = keycloak.tokenParsed?.['preferred_username'] ?? 'User';
 
   ngOnInit(): void {
+    this.loadConversations();
+    this.refreshSub = this.chatService.refresh$.subscribe(() => this.loadConversations());
+  }
+
+  ngOnDestroy(): void {
+    this.refreshSub?.unsubscribe();
+  }
+
+  private loadConversations(): void {
     this.chatService.getConversations().subscribe({
       next: convs => (this.conversations = convs),
       error: () => {},

@@ -72,6 +72,26 @@ class TestCurrencyCodeAmounts:
         assert "BRL 5,000" in _entities(analyzer, "Payment: BRL 5,000")
 
 
+class TestBareAmounts:
+    def test_salary_no_currency_symbol(self, analyzer):
+        assert "450,000" in _entities(analyzer, "Annual Salary: 450,000")
+
+    def test_large_bare_amount(self, analyzer):
+        assert "1,234,567" in _entities(analyzer, "Revenue was 1,234,567 last quarter.")
+
+    def test_bare_amount_with_cents(self, analyzer):
+        assert "10,000.00" in _entities(analyzer, "Total: 10,000.00")
+
+    def test_small_bare_amount_ten_thousand(self, analyzer):
+        assert "10,000" in _entities(analyzer, "Bonus: 10,000")
+
+    def test_year_not_flagged(self, analyzer):
+        assert _entities(analyzer, "Fiscal year 2024 report.") == []
+
+    def test_plain_small_number_not_flagged(self, analyzer):
+        assert _entities(analyzer, "There are 42 employees.") == []
+
+
 class TestNonFinancialText:
     def test_plain_number_not_flagged(self, analyzer):
         assert _entities(analyzer, "There are 42 employees.") == []
@@ -94,6 +114,15 @@ class TestRedactionBehavior:
         init_engines()
         cleaned, count = analyze_and_anonymize("The budget is $500,000 for Q3.")
         assert "$500,000" not in cleaned
+        assert "[REDACTED]" in cleaned
+        assert count >= 1
+
+    def test_bare_salary_is_redacted(self):
+        from src.analyzer import init_engines, analyze_and_anonymize
+
+        init_engines()
+        cleaned, count = analyze_and_anonymize("Annual Salary: 450,000")
+        assert "450,000" not in cleaned
         assert "[REDACTED]" in cleaned
         assert count >= 1
 

@@ -8,6 +8,11 @@ export const routes: Routes = [
       import('./features/chat/chat.component').then(m => m.ChatComponent),
   },
   {
+    path: 'c/:id',
+    loadComponent: () =>
+      import('./features/chat/chat.component').then(m => m.ChatComponent),
+  },
+  {
     path: 'admin',
     loadComponent: () =>
       import('./features/admin/admin.component').then(m => m.AdminComponent),

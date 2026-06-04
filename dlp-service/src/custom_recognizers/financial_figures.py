@@ -15,6 +15,10 @@ _PATTERNS = [
     ),
     # USD 125,000  EUR 12,000  BRL 5,000
     Pattern("CURRENCY_CODE_AMOUNT", r"\b(?:USD|EUR|BRL)\s+[\d,]+(?:\.\d{1,2})?\b", 0.85),
+    # 450,000  1,234,567  10,000.00  (comma-grouped numbers — no currency marker needed)
+    # Score 0.75: lower confidence than symbol-anchored patterns to limit false positives.
+    # Requires at least one comma-separated triple so plain years (2024) are never matched.
+    Pattern("BARE_AMOUNT", r"\b\d+(?:,\d{3})+(?:\.\d{1,2})?\b", 0.75),
 ]
 
 

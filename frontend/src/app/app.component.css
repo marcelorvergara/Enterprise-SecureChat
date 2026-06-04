@@ -66,3 +66,17 @@
   font-size: 0.875rem;
   color: rgba(0, 0, 0, 0.87);
 }
+
+.conv-item {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.conv-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.active-conv {
+  background: rgba(63, 81, 181, 0.1) !important;
+  color: #3f51b5;
+}

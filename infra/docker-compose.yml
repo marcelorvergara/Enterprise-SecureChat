@@ -114,7 +114,6 @@ services:
     env_file:
       - .env
     environment:
-      # SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: enterprise-securechat
       QDRANT_URL: http://qdrant:6333

@@ -2,9 +2,13 @@ import {
   AfterViewChecked,
   Component,
   ElementRef,
+  OnDestroy,
+  OnInit,
   ViewChild,
   inject,
 } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -15,7 +19,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { CdkTextareaAutosize, TextFieldModule } from '@angular/cdk/text-field';
-import { ChatService, SourceCitation } from '../../core/services/chat.service';
+import { ChatService, Message, SourceCitation } from '../../core/services/chat.service';
 import { SafeMarkdownPipe } from '../../shared/pipes/safe-markdown.pipe';
 
 interface ChatMessage {
@@ -45,11 +49,14 @@ interface ChatMessage {
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.css'],
 })
-export class ChatComponent implements AfterViewChecked {
+export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   @ViewChild('messageThread') private messageThread!: ElementRef<HTMLDivElement>;
   @ViewChild(CdkTextareaAutosize) private autosize!: CdkTextareaAutosize;
 
   private readonly chatService = inject(ChatService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private routeSub?: Subscription;
 
   messages: ChatMessage[] = [];
   readonly messageControl = new FormControl('');
@@ -57,6 +64,46 @@ export class ChatComponent implements AfterViewChecked {
   conversationId?: string;
 
   private pendingScroll = false;
+
+  ngOnInit(): void {
+    this.routeSub = this.route.paramMap.subscribe(params => {
+      const id = params.get('id') ?? undefined;
+      this.reset();
+      if (id) {
+        this.conversationId = id;
+        this.loadHistory(id);
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
+  }
+
+  private reset(): void {
+    this.messages = [];
+    this.conversationId = undefined;
+    this.loading = false;
+    this.pendingScroll = false;
+  }
+
+  private loadHistory(conversationId: string): void {
+    this.loading = true;
+    this.chatService.getMessages(conversationId).subscribe({
+      next: (msgs: Message[]) => {
+        this.messages = msgs.map(m => ({
+          role: m.role,
+          content: m.content,
+          sources: m.sources ?? [],
+          fgaApplied: false,
+          dlpEntitiesRedacted: 0,
+        }));
+        this.loading = false;
+        this.pendingScroll = true;
+      },
+      error: () => { this.loading = false; },
+    });
+  }
 
   ngAfterViewChecked(): void {
     if (this.pendingScroll) {
@@ -87,11 +134,16 @@ export class ChatComponent implements AfterViewChecked {
     this.loading = true;
     this.pendingScroll = true;
 
+    const wasNew = !this.conversationId;
     this.chatService
       .sendMessage({ message: text, conversationId: this.conversationId })
       .subscribe({
         next: response => {
           this.conversationId = response.conversationId;
+          if (wasNew) {
+            this.chatService.notifyConversationCreated();
+            this.router.navigate(['/c', response.conversationId], { replaceUrl: true });
+          }
           this.messages.push({
             role: 'assistant',
             content: response.answer,
