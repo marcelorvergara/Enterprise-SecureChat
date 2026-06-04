@@ -26,11 +26,17 @@ def init_engines() -> None:
     _anonymizer = AnonymizerEngine()
 
 
-def analyze_and_anonymize(text: str) -> tuple[str, int]:
+def analyze_and_anonymize(
+    text: str, allow_entities: list[str] | None = None
+) -> tuple[str, int]:
     if _analyzer is None or _anonymizer is None:
         raise RuntimeError("Engines not initialized — call init_engines() first")
 
-    results = _analyzer.analyze(text=text, entities=_DEFAULT_ENTITIES, language="en")
+    entities = [e for e in _DEFAULT_ENTITIES if e not in (allow_entities or [])]
+    if not entities:
+        return text, 0
+
+    results = _analyzer.analyze(text=text, entities=entities, language="en")
 
     if not results:
         return text, 0

@@ -109,7 +109,7 @@ public class RagService {
         var rawAnswer = claudeService.complete(systemPrompt, claudeMessages);
 
         // ── 8. DLP — redact PII and financial figures before returning ────────
-        var dlpResult = dlpClient.analyze(rawAnswer);
+        var dlpResult = dlpClient.analyze(rawAnswer, roles);
 
         // ── 9. Persist messages (store the redacted answer, not the raw one) ──
         conversationService.saveUserMessage(conversation.getId(), request.message());
@@ -176,7 +176,7 @@ public class RagService {
         claudeMessages.add(new ClaudeService.ConversationMessage("user", request.message()));
 
         var rawAnswer = claudeService.complete(systemPrompt, claudeMessages, 2048);
-        var dlpResult = dlpClient.analyze(rawAnswer);
+        var dlpResult = dlpClient.analyze(rawAnswer, roles);
 
         var userMessageContent = request.message() + " [Attached: " + documentFilename + "]";
         conversationService.saveUserMessage(conversation.getId(), userMessageContent);

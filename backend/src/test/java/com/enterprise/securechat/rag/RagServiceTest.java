@@ -76,12 +76,12 @@ class RagServiceTest {
         when(qdrantClient.search(eq(vector), any(), eq(5))).thenReturn(List.of());
         when(conversationService.getHistory(any(), eq(10))).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn(rawAnswer);
-        when(dlpClient.analyze(rawAnswer)).thenReturn(new DlpClient.DlpResult(cleanedAnswer, 1));
+        when(dlpClient.analyze(eq(rawAnswer), anyList())).thenReturn(new DlpClient.DlpResult(cleanedAnswer, 1));
 
         var response = ragService.chat(request, auth);
 
         // DLP must be called with the raw Claude answer
-        verify(dlpClient).analyze(rawAnswer);
+        verify(dlpClient).analyze(eq(rawAnswer), anyList());
         // Response must contain the cleaned (DLP-processed) text, not raw
         assertThat(response.answer()).isEqualTo(cleanedAnswer);
         assertThat(response.dlpEntitiesRedacted()).isEqualTo(1);
@@ -103,7 +103,7 @@ class RagServiceTest {
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn("No data found.");
-        when(dlpClient.analyze(any())).thenReturn(new DlpClient.DlpResult("No data found.", 0));
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("No data found.", 0));
 
         var response = ragService.chat(request, auth);
 
@@ -122,7 +122,7 @@ class RagServiceTest {
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn("Onboarding takes 2 weeks.");
-        when(dlpClient.analyze(any())).thenReturn(new DlpClient.DlpResult("Onboarding takes 2 weeks.", 0));
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Onboarding takes 2 weeks.", 0));
 
         var response = ragService.chat(request, auth);
 
@@ -141,7 +141,7 @@ class RagServiceTest {
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn("Hi.");
-        when(dlpClient.analyze(any())).thenReturn(new DlpClient.DlpResult("Hi.", 0));
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Hi.", 0));
 
         ragService.chat(request, auth);
 
@@ -165,7 +165,7 @@ class RagServiceTest {
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn("Answer.");
-        when(dlpClient.analyze(any())).thenReturn(new DlpClient.DlpResult("Answer.", 0));
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Answer.", 0));
 
         ragService.chat(request, auth);
 
@@ -189,7 +189,7 @@ class RagServiceTest {
         when(qdrantClient.search(any(), eq(expectedFilter), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn("No access.");
-        when(dlpClient.analyze(any())).thenReturn(new DlpClient.DlpResult("No access.", 0));
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("No access.", 0));
 
         ragService.chat(request, auth);
 
@@ -209,7 +209,7 @@ class RagServiceTest {
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn("Follow-up answered.");
-        when(dlpClient.analyze(any())).thenReturn(new DlpClient.DlpResult("Follow-up answered.", 0));
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Follow-up answered.", 0));
 
         ragService.chat(request, auth);
 

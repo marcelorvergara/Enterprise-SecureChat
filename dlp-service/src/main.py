@@ -17,6 +17,7 @@ app = FastAPI(title="DLP Service", lifespan=lifespan)
 
 class AnalyzeRequest(BaseModel):
     text: str
+    allow_entities: list[str] = []
 
 
 class AnalyzeResponse(BaseModel):
@@ -33,5 +34,5 @@ def health():
 def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     if not request.text:
         raise HTTPException(status_code=400, detail="text field is required")
-    cleaned, count = analyze_and_anonymize(request.text)
+    cleaned, count = analyze_and_anonymize(request.text, request.allow_entities)
     return AnalyzeResponse(cleaned_text=cleaned, entities_redacted=count)
