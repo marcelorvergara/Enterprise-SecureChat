@@ -81,51 +81,49 @@
 
   </div>
 
-  <!-- ── File chip strip (visible only when a file is attached) ─── -->
-  @if (attachedFile) {
-    <div class="file-chip-strip">
-      <mat-chip-set>
-        <mat-chip>
-          <mat-icon matChipAvatar>description</mat-icon>
-          {{ attachedFile.name }}
-          <button matChipRemove (click)="removeFile()"><mat-icon>cancel</mat-icon></button>
-        </mat-chip>
-      </mat-chip-set>
-    </div>
-  }
+  <!-- ── Composer ───────────────────────────────────────────────── -->
+  <div class="composer">
 
-  <!-- ── Input area ──────────────────────────────────────────────── -->
-  <div class="input-area">
-    <input type="file" #fileInput hidden
-      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.tiff,.tif"
-      (change)="onFileSelected($event)">
-    <button mat-icon-button class="attach-btn" type="button"
-      (click)="fileInput.click()" [disabled]="loading"
-      matTooltip="Attach a document for compliance verification">
-      <mat-icon>attach_file</mat-icon>
-    </button>
-    <mat-form-field appearance="outline" class="message-field">
-      <mat-label>Ask a question…</mat-label>
-      <textarea
-        matInput
-        cdkTextareaAutosize
-        [cdkAutosizeMinRows]="1"
-        [cdkAutosizeMaxRows]="6"
-        [formControl]="messageControl"
-        (keydown)="onKeydown($event)"
-        [disabled]="loading"
-        placeholder="Enter to send · Shift+Enter for new line">
-      </textarea>
-    </mat-form-field>
-    <button
-      mat-fab
-      color="primary"
-      class="send-btn"
-      (click)="sendMessage()"
-      [disabled]="loading || !messageControl.value?.trim()"
-      matTooltip="Send (Enter)">
-      <mat-icon>send</mat-icon>
-    </button>
+    @if (attachedFile) {
+      <div class="composer-attachment">
+        <mat-icon class="composer-attach-icon">description</mat-icon>
+        <span class="composer-attach-name">{{ attachedFile.name }}</span>
+        <button class="composer-attach-remove" type="button"
+          (click)="removeFile()" matTooltip="Remove attachment">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    }
+
+    <textarea
+      cdkTextareaAutosize
+      [cdkAutosizeMinRows]="1"
+      [cdkAutosizeMaxRows]="8"
+      class="composer-textarea"
+      [formControl]="messageControl"
+      (keydown)="onKeydown($event)"
+      [disabled]="loading"
+      placeholder="Ask a question…">
+    </textarea>
+
+    <div class="composer-actions">
+      <input type="file" #fileInput hidden
+        accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.tiff,.tif,.txt,.md,.csv"
+        (change)="onFileSelected($event)">
+      <button class="composer-icon-btn" type="button"
+        (click)="fileInput.click()" [disabled]="loading"
+        matTooltip="Attach a document for compliance verification">
+        <mat-icon>attach_file</mat-icon>
+      </button>
+      <span class="composer-hint">Enter ↵ to send &nbsp;·&nbsp; Shift+Enter for new line</span>
+      <button class="composer-send" type="button"
+        (click)="sendMessage()"
+        [disabled]="loading || !messageControl.value?.trim()"
+        matTooltip="Send (Enter)">
+        <mat-icon>arrow_upward</mat-icon>
+      </button>
+    </div>
+
   </div>
 
 </div>
