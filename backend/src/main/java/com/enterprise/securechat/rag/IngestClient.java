@@ -1,9 +1,10 @@
 package com.enterprise.securechat.rag;
 
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -20,15 +21,18 @@ public class IngestClient {
     }
 
     public IngestResult ingest(MultipartFile file, String buPath) throws IOException {
-        var builder = new MultipartBodyBuilder();
-        builder.part("file", file.getResource())
-               .filename(Objects.requireNonNullElse(file.getOriginalFilename(), "upload"));
-        builder.part("bu_path", buPath);
+        var filename = Objects.requireNonNullElse(file.getOriginalFilename(), "upload");
+        var map = new LinkedMultiValueMap<String, Object>();
+        map.add("file", new ByteArrayResource(file.getBytes()) {
+            @Override
+            public String getFilename() { return filename; }
+        });
+        map.add("bu_path", buPath);
 
         var response = restClient.post()
                 .uri("/ingest")
                 .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(builder.build())
+                .body(map)
                 .retrieve()
                 .body(IngestResponse.class);
 
