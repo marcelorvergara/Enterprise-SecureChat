@@ -3,6 +3,11 @@ from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
 from .custom_recognizers.financial_figures import build_financial_figure_recognizer
+from .custom_recognizers.og_rules import (
+    build_og_volumes_recognizer,
+    build_anp_process_recognizer,
+    build_reserves_variation_recognizer,
+)
 
 _DEFAULT_ENTITIES = [
     "PERSON",
@@ -10,6 +15,9 @@ _DEFAULT_ENTITIES = [
     "PHONE_NUMBER",
     "CREDIT_CARD",
     "FINANCIAL_FIGURE",
+    "OG_VOLUMES",
+    "ANP_PROCESS",
+    "RESERVES_VARIATION",
 ]
 
 # Engines are module-level singletons — initialized once at startup, never per request.
@@ -22,6 +30,9 @@ def init_engines() -> None:
     registry = RecognizerRegistry()
     registry.load_predefined_recognizers()
     registry.add_recognizer(build_financial_figure_recognizer())
+    registry.add_recognizer(build_og_volumes_recognizer())
+    registry.add_recognizer(build_anp_process_recognizer())
+    registry.add_recognizer(build_reserves_variation_recognizer())
     _analyzer = AnalyzerEngine(registry=registry)
     _anonymizer = AnonymizerEngine()
 

@@ -43,7 +43,6 @@ class RagServiceTest {
     private Authentication auth;
     private Jwt jwt;
     private static final String USER_SUB = "user-sub-123";
-    private static final UUID CONV_ID = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
@@ -53,10 +52,10 @@ class RagServiceTest {
         when(jwt.getSubject()).thenReturn(USER_SUB);
         when(auth.getPrincipal()).thenReturn(jwt);
 
-        // Simulate a finance-analyst user
+        // Simulate a reservoir-team user in BU Campos
         Collection<GrantedAuthority> authorities = List.of(
-            new SimpleGrantedAuthority("ROLE_finance-analyst"),
-            new SimpleGrantedAuthority("ROLE_employee")
+            new SimpleGrantedAuthority("ROLE_reservoir-team"),
+            new SimpleGrantedAuthority("GROUP_BU_CAMPOS")
         );
         doReturn(authorities).when(auth).getAuthorities();
     }
@@ -64,25 +63,22 @@ class RagServiceTest {
     @Test
     void chat_dlpIsCalledBeforeReturningResult() {
         var conversation = new Conversation(USER_SUB);
-        var request = new ChatRequest("What are the Q3 figures?", null);
-        var vector = List.of(0.1f, 0.2f, 0.3f);
-        var rawAnswer = "The Q3 figures are $125,000.";
-        var cleanedAnswer = "The Q3 figures are [REDACTED].";
+        var request = new ChatRequest("What are the Q3 reserves?", null);
+        var rawAnswer = "Reserves are 3.2 MMboe.";
+        var cleanedAnswer = "Reserves are [REDACTED].";
 
-        when(fgaService.getRestrictedPaths(anyList())).thenReturn(List.of());
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
         when(fgaService.buildQdrantFilter(anyList())).thenReturn(Map.of());
         when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
-        when(embedClient.embed(request.message())).thenReturn(vector);
-        when(qdrantClient.search(eq(vector), any(), eq(5))).thenReturn(List.of());
+        when(embedClient.embed(request.message())).thenReturn(List.of(0.1f, 0.2f, 0.3f));
+        when(qdrantClient.search(any(), any(), eq(5))).thenReturn(List.of());
         when(conversationService.getHistory(any(), eq(10))).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn(rawAnswer);
         when(dlpClient.analyze(eq(rawAnswer), anyList())).thenReturn(new DlpClient.DlpResult(cleanedAnswer, 1));
 
         var response = ragService.chat(request, auth);
 
-        // DLP must be called with the raw Claude answer
         verify(dlpClient).analyze(eq(rawAnswer), anyList());
-        // Response must contain the cleaned (DLP-processed) text, not raw
         assertThat(response.answer()).isEqualTo(cleanedAnswer);
         assertThat(response.dlpEntitiesRedacted()).isEqualTo(1);
     }
@@ -90,13 +86,13 @@ class RagServiceTest {
     @Test
     void chat_fgaAppliedIsTrueWhenRestrictionsExist() {
         var conversation = new Conversation(USER_SUB);
-        var request = new ChatRequest("Show me payroll data.", null);
-        var restrictedPaths = List.of("finance/payroll");
+        var request = new ChatRequest("Show BAR data.", null);
+        var restrictedPaths = List.of("bar-questions");
 
-        when(fgaService.getRestrictedPaths(anyList())).thenReturn(restrictedPaths);
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(restrictedPaths);
         when(fgaService.buildQdrantFilter(restrictedPaths)).thenReturn(
             Map.of("must_not", List.of(Map.of("key", "ancestor_paths",
-                "match", Map.of("any", List.of("finance/payroll")))))
+                "match", Map.of("any", List.of("bar-questions")))))
         );
         when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
@@ -113,16 +109,16 @@ class RagServiceTest {
     @Test
     void chat_fgaAppliedIsFalseWhenNoRestrictions() {
         var conversation = new Conversation(USER_SUB);
-        var request = new ChatRequest("What is our onboarding process?", null);
+        var request = new ChatRequest("What is our drilling schedule?", null);
 
-        when(fgaService.getRestrictedPaths(anyList())).thenReturn(List.of());
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
         when(fgaService.buildQdrantFilter(List.of())).thenReturn(Map.of());
         when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn("Onboarding takes 2 weeks.");
-        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Onboarding takes 2 weeks.", 0));
+        when(claudeService.complete(anyString(), anyList())).thenReturn("Drilling starts Q2.");
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Drilling starts Q2.", 0));
 
         var response = ragService.chat(request, auth);
 
@@ -134,7 +130,7 @@ class RagServiceTest {
         var conversation = new Conversation(USER_SUB);
         var request = new ChatRequest("Hello", null);
 
-        when(fgaService.getRestrictedPaths(anyList())).thenReturn(List.of());
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
         when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
         when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
@@ -145,20 +141,23 @@ class RagServiceTest {
 
         ragService.chat(request, auth);
 
-        // FGA lookup must receive plain Keycloak role names, not Spring's "ROLE_" prefixed ones
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<String>> rolesCaptor = ArgumentCaptor.forClass(List.class);
-        verify(fgaService).getRestrictedPaths(rolesCaptor.capture());
-        assertThat(rolesCaptor.getValue()).containsExactlyInAnyOrder("finance-analyst", "employee");
-        assertThat(rolesCaptor.getValue()).doesNotContain("ROLE_finance-analyst");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> groupsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(fgaService).getRestrictedPaths(rolesCaptor.capture(), groupsCaptor.capture());
+
+        assertThat(rolesCaptor.getValue()).containsExactly("reservoir-team");
+        assertThat(rolesCaptor.getValue()).doesNotContain("ROLE_reservoir-team");
+        assertThat(groupsCaptor.getValue()).containsExactly("GROUP_BU_CAMPOS");
     }
 
     @Test
     void chat_auditLogReceivesHashedPromptNotRawText() {
         var conversation = new Conversation(USER_SUB);
-        var request = new ChatRequest("Sensitive question here.", null);
+        var request = new ChatRequest("Sensitive reserves question.", null);
 
-        when(fgaService.getRestrictedPaths(anyList())).thenReturn(List.of());
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
         when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
         when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
@@ -169,20 +168,19 @@ class RagServiceTest {
 
         ragService.chat(request, auth);
 
-        // AuditService.log receives the raw prompt so it can hash it internally
-        verify(auditService).log(eq(USER_SUB), anyList(), anyList(), eq("Sensitive question here."));
+        verify(auditService).log(eq(USER_SUB), anyList(), anyList(), eq("Sensitive reserves question."));
     }
 
     @Test
     void chat_qdrantReceivesFgaFilterWhenRestrictionsPresent() {
         var conversation = new Conversation(USER_SUB);
-        var request = new ChatRequest("Show me finance data.", null);
-        var restrictedPaths = List.of("finance");
+        var request = new ChatRequest("Show BAR answers.", null);
+        var restrictedPaths = List.of("bar-questions");
         var expectedFilter = Map.<String, Object>of("must_not", List.of(
-            Map.of("key", "ancestor_paths", "match", Map.of("any", List.of("finance")))
+            Map.of("key", "ancestor_paths", "match", Map.of("any", List.of("bar-questions")))
         ));
 
-        when(fgaService.getRestrictedPaths(anyList())).thenReturn(restrictedPaths);
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(restrictedPaths);
         when(fgaService.buildQdrantFilter(restrictedPaths)).thenReturn(expectedFilter);
         when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
@@ -202,7 +200,7 @@ class RagServiceTest {
         var conversation = new Conversation(USER_SUB);
         var request = new ChatRequest("Follow-up question.", existingConvId);
 
-        when(fgaService.getRestrictedPaths(anyList())).thenReturn(List.of());
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
         when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
         when(conversationService.getOrCreate(existingConvId, USER_SUB)).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
@@ -214,5 +212,34 @@ class RagServiceTest {
         ragService.chat(request, auth);
 
         verify(conversationService).getOrCreate(existingConvId, USER_SUB);
+    }
+
+    @Test
+    void chat_privilegedRoleSkipsDlpRedactionForVolumes() {
+        // reserves-management user should pass OG_VOLUMES to DLP allow list via DlpClient
+        Collection<GrantedAuthority> privilegedAuthorities = List.of(
+            new SimpleGrantedAuthority("ROLE_reserves-management"),
+            new SimpleGrantedAuthority("GROUP_BU_CAMPOS")
+        );
+        doReturn(privilegedAuthorities).when(auth).getAuthorities();
+
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("What are the total proven reserves?", null);
+        var rawAnswer = "Total proven reserves: 450 MMboe.";
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(claudeService.complete(anyString(), anyList())).thenReturn(rawAnswer);
+        when(dlpClient.analyze(eq(rawAnswer), anyList())).thenReturn(new DlpClient.DlpResult(rawAnswer, 0));
+
+        var response = ragService.chat(request, auth);
+
+        // DlpClient receives the role list; DlpClient itself decides the bypass list
+        verify(dlpClient).analyze(eq(rawAnswer), argThat(roles -> roles.contains("reserves-management")));
+        assertThat(response.answer()).isEqualTo(rawAnswer);
     }
 }

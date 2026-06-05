@@ -60,6 +60,15 @@ public class RestClientConfig {
                 .build();
     }
 
+    @Bean("ingestRestClient")
+    public RestClient ingestRestClient(
+            @Value("${embed-service.url}") String embedUrl) {
+        return RestClient.builder()
+                .requestFactory(factory(2_000, 120_000))
+                .baseUrl(embedUrl)
+                .build();
+    }
+
     private SimpleClientHttpRequestFactory factory(int connectMs, int readMs) {
         var f = new SimpleClientHttpRequestFactory();
         f.setConnectTimeout(connectMs);

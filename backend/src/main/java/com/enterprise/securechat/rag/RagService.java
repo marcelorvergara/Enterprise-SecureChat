@@ -66,8 +66,14 @@ public class RagService {
                 .map(a -> a.substring(5))
                 .toList();
 
+        // Collect BU group authorities (e.g. GROUP_BU_CAMPOS) for FGA BU isolation
+        var groups = auth.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .filter(a -> a.startsWith("GROUP_"))
+                .toList();
+
         // ── 1. FGA — compute Qdrant must_not filter ──────────────────────────
-        List<String> restrictedPaths = fgaService.getRestrictedPaths(roles);
+        List<String> restrictedPaths = fgaService.getRestrictedPaths(roles, groups);
         Map<String, Object> qdrantFilter = fgaService.buildQdrantFilter(restrictedPaths);
 
         // ── 2. Conversation — get or create ──────────────────────────────────
@@ -143,7 +149,12 @@ public class RagService {
                 .map(a -> a.substring(5))
                 .toList();
 
-        List<String> restrictedPaths = fgaService.getRestrictedPaths(roles);
+        var groups = auth.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .filter(a -> a.startsWith("GROUP_"))
+                .toList();
+
+        List<String> restrictedPaths = fgaService.getRestrictedPaths(roles, groups);
         Map<String, Object> qdrantFilter = fgaService.buildQdrantFilter(restrictedPaths);
 
         var conversation = conversationService.getOrCreate(request.conversationId(), userSub);
@@ -198,29 +209,39 @@ public class RagService {
         var knowledge = (contextChunks == null || contextChunks.isBlank())
                 ? "No relevant documents were found in the knowledge base."
                 : contextChunks;
-        return "You are an enterprise knowledge assistant and document compliance verifier.\n\n"
+        return OG_BASE_INSTRUCTIONS + "\n\n"
              + "ENTERPRISE KNOWLEDGE BASE (verified ground truth):\n" + knowledge + "\n\n"
              + "USER-SUBMITTED DOCUMENT FOR VERIFICATION:\nFilename: " + documentFilename + "\n"
              + documentText + "\n\n"
              + "Compare the submitted document against the knowledge base. "
-             + "Identify discrepancies, errors, outdated figures, or compliance issues. "
+             + "Identify discrepancies, errors, outdated figures, or ANP compliance issues. "
              + "If the knowledge base lacks coverage on the submitted topic, say so clearly.";
     }
 
     private String buildSystemPrompt(String contextChunks) {
         if (contextChunks == null || contextChunks.isBlank()) {
-            return """
-                    You are an enterprise knowledge assistant. \
-                    Answer questions accurately and professionally. \
-                    No relevant documents were found for this query — \
-                    say so clearly rather than inventing information.""";
+            return OG_BASE_INSTRUCTIONS + "\n\n"
+                 + "No relevant documents were found for this query — "
+                 + "say so clearly rather than inventing information.";
         }
-        return "You are an enterprise knowledge assistant. " +
-               "Answer using ONLY the provided context. " +
-               "Do not invent facts not present in the context. " +
-               "If the context is insufficient, say so clearly.\n\n" +
-               "Context:\n" + contextChunks;
+        return OG_BASE_INSTRUCTIONS + "\n\n"
+             + "Answer using ONLY the provided context. "
+             + "Do not invent facts not present in the context. "
+             + "If the context is insufficient, say so clearly.\n\n"
+             + "Context:\n" + contextChunks;
     }
+
+    // Base instructions shared by all system prompts.
+    // Unit rule closes the bare-number DLP gap: a number like "450,000" with no unit
+    // bypasses the FINANCIAL_FIGURE recognizer, but "450,000 MMboe" is caught by OG_VOLUMES.
+    private static final String OG_BASE_INSTRUCTIONS =
+        "You are an Oil & Gas enterprise knowledge assistant operating under ANP compliance rules.\n"
+      + "Always attach standard measurement units to every quantity you cite: "
+      + "use MMboe, bbl, bbl/d, m³/d for volumes; USD/bbl or BRL/bbl for barrel prices; "
+      + "USD, BRL, or EUR followed by the amount for monetary figures. "
+      + "Never write a bare number without its unit or currency symbol.\n"
+      + "When your answer contains information sourced from an ANP official document, "
+      + "prefix that paragraph with 'ANP Response:' so it can be identified downstream.";
 
     private String payloadString(Map<String, Object> payload, String key) {
         var val = payload.get(key);

@@ -15,13 +15,19 @@
 
   "roles": {
     "realm": [
-      { "name": "admin",          "description": "Full system access including admin panel" },
-      { "name": "employee",       "description": "General employee — standard access" },
-      { "name": "finance-analyst","description": "Finance department analyst" },
-      { "name": "hr-manager",     "description": "Human resources manager" },
-      { "name": "it-ops",         "description": "IT operations" }
+      { "name": "admin",                 "description": "Full system access including admin panel" },
+      { "name": "reserves-coordination", "description": "Reserves coordination — access to BAR questions and cross-BU corporate answers" },
+      { "name": "reserves-management",   "description": "Reserves management — access to BAR questions, volumes, and financial figures unredacted" },
+      { "name": "reservoir-team",        "description": "Reservoir engineering team — no access to BAR questions or ANP restricted content" },
+      { "name": "bu-user",               "description": "Business Unit user — access restricted to own BU content and corporate answers" }
     ]
   },
+
+  "groups": [
+    { "name": "BU_Campos",   "path": "/BU_Campos"   },
+    { "name": "BU_Santos",   "path": "/BU_Santos"   },
+    { "name": "BU_Solimoes", "path": "/BU_Solimoes" }
+  ],
 
   "clients": [
     {
@@ -41,7 +47,7 @@
       ],
       "protocol": "openid-connect",
       "fullScopeAllowed": true,
-      "defaultClientScopes": ["openid", "profile", "email", "roles"]
+      "defaultClientScopes": ["openid", "profile", "email", "roles", "groups"]
     },
     {
       "clientId": "securechat-backend",
@@ -53,7 +59,7 @@
       "directAccessGrantsEnabled": false,
       "secret": "CHANGE_THIS_SECRET",
       "protocol": "openid-connect",
-      "defaultClientScopes": ["openid", "profile", "email", "roles"]
+      "defaultClientScopes": ["openid", "profile", "email", "roles", "groups"]
     }
   ],
 
@@ -78,10 +84,31 @@
           }
         }
       ]
+    },
+    {
+      "name": "groups",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "userinfo.token.claim": "true",
+            "multivalued": "true"
+          }
+        }
+      ]
     }
   ],
 
-  "defaultDefaultClientScopes": ["openid", "profile", "email", "roles"],
+  "defaultDefaultClientScopes": ["openid", "profile", "email", "roles", "groups"],
 
   "browserSecurityHeaders": {
     "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",

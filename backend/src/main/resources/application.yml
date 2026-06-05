@@ -66,6 +66,12 @@ anthropic:
   api-key: ${ANTHROPIC_API_KEY}
   model: ${CLAUDE_MODEL:claude-sonnet-4-6}
 
+# ── Oil & Gas domain config ───────────────────────────────────────────────────
+og:
+  # Comma-separated list of known BU names (lowercase). Used by FgaService to
+  # compute cross-BU path restrictions from the user's GROUP_BU_xxx authority.
+  known-bus: ${OG_KNOWN_BUS:campos,santos,solimoes}
+
 # ── Actuator ─────────────────────────────────────────────────────────────────
 management:
   endpoints:

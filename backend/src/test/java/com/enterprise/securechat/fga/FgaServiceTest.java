@@ -1,8 +1,8 @@
 package com.enterprise.securechat.fga;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -18,28 +18,84 @@ class FgaServiceTest {
     @Mock
     private RoleRestrictionRepository restrictionRepository;
 
-    @InjectMocks
     private FgaService fgaService;
 
+    @BeforeEach
+    void setUp() {
+        fgaService = new FgaService(
+            restrictionRepository,
+            new String[]{"campos", "santos", "solimoes"}
+        );
+    }
+
+    // ── DB-backed role restrictions ──────────────────────────────────────────
+
     @Test
-    void getRestrictedPaths_returnsPathsForMatchingRoles() {
-        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("finance-analyst")))
-            .thenReturn(List.of("finance/payroll", "finance/budgets"));
+    void getRestrictedPaths_returnsDbPathsForMatchingRoles() {
+        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("reservoir-team")))
+            .thenReturn(List.of("bar-questions"));
 
-        List<String> paths = fgaService.getRestrictedPaths(List.of("finance-analyst"));
+        var paths = fgaService.getRestrictedPaths(List.of("reservoir-team"), List.of());
 
-        assertThat(paths).containsExactly("finance/payroll", "finance/budgets");
+        assertThat(paths).contains("bar-questions");
     }
 
     @Test
-    void getRestrictedPaths_emptyRolesReturnsEmpty() {
-        assertThat(fgaService.getRestrictedPaths(List.of())).isEmpty();
+    void getRestrictedPaths_emptyRolesAndGroupsStillBlocksLegacyRoots() {
+        var paths = fgaService.getRestrictedPaths(List.of(), List.of());
+        assertThat(paths).containsAll(List.of("finance", "hr", "it-ops"));
     }
 
     @Test
-    void getRestrictedPaths_nullRolesReturnsEmpty() {
-        assertThat(fgaService.getRestrictedPaths(null)).isEmpty();
+    void getRestrictedPaths_nullRolesStillBlocksLegacyRoots() {
+        var paths = fgaService.getRestrictedPaths(null, List.of());
+        assertThat(paths).containsAll(List.of("finance", "hr", "it-ops"));
     }
+
+    // ── Dynamic BU isolation ─────────────────────────────────────────────────
+
+    @Test
+    void getRestrictedPaths_buUserInCamposIsBlockedFromOtherBus() {
+        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("bu-user")))
+            .thenReturn(List.of());
+
+        var paths = fgaService.getRestrictedPaths(
+            List.of("bu-user"),
+            List.of("GROUP_BU_CAMPOS")
+        );
+
+        assertThat(paths).contains("bu/santos", "bu/solimoes");
+        assertThat(paths).doesNotContain("bu/campos");
+    }
+
+    @Test
+    void getRestrictedPaths_noGroupMembershipProducesNoBuRestrictions() {
+        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("reserves-coordination")))
+            .thenReturn(List.of());
+
+        var paths = fgaService.getRestrictedPaths(
+            List.of("reserves-coordination"),
+            List.of()
+        );
+
+        assertThat(paths).doesNotContain("bu/campos", "bu/santos", "bu/solimoes");
+    }
+
+    @Test
+    void getRestrictedPaths_dbRestrictionsAndBuIsolationAreMerged() {
+        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("reservoir-team")))
+            .thenReturn(List.of("bar-questions"));
+
+        var paths = fgaService.getRestrictedPaths(
+            List.of("reservoir-team"),
+            List.of("GROUP_BU_SANTOS")
+        );
+
+        assertThat(paths).contains("bar-questions", "bu/campos", "bu/solimoes");
+        assertThat(paths).doesNotContain("bu/santos");
+    }
+
+    // ── Qdrant filter building ───────────────────────────────────────────────
 
     @Test
     void buildQdrantFilter_emptyPathsReturnsEmptyMap() {
@@ -49,47 +105,39 @@ class FgaServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void buildQdrantFilter_singlePathBuildsCorrectMustNotCondition() {
-        Map<String, Object> filter = fgaService.buildQdrantFilter(List.of("finance"));
+        Map<String, Object> filter = fgaService.buildQdrantFilter(List.of("bar-questions"));
 
-        List<Map<String, Object>> mustNot = (List<Map<String, Object>>) filter.get("must_not");
+        var mustNot = (List<Map<String, Object>>) filter.get("must_not");
         assertThat(mustNot).hasSize(1);
 
-        Map<String, Object> condition = mustNot.get(0);
+        var condition = mustNot.get(0);
         assertThat(condition.get("key")).isEqualTo("ancestor_paths");
 
-        Map<String, Object> match = (Map<String, Object>) condition.get("match");
-        assertThat((List<String>) match.get("any")).containsExactly("finance");
+        var match = (Map<String, Object>) condition.get("match");
+        assertThat((List<String>) match.get("any")).containsExactly("bar-questions");
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void buildQdrantFilter_multiplePathsProduceOneMustNotPerPath() {
-        Map<String, Object> filter = fgaService.buildQdrantFilter(
-            List.of("finance", "hr/compensation")
-        );
+        var filter = fgaService.buildQdrantFilter(List.of("bar-questions", "bu/santos"));
 
-        List<Map<String, Object>> mustNot = (List<Map<String, Object>>) filter.get("must_not");
+        var mustNot = (List<Map<String, Object>>) filter.get("must_not");
         assertThat(mustNot).hasSize(2);
 
-        // Verify second path is also correctly mapped
-        Map<String, Object> second = mustNot.get(1);
-        Map<String, Object> match = (Map<String, Object>) second.get("match");
-        assertThat((List<String>) match.get("any")).containsExactly("hr/compensation");
+        var second = mustNot.get(1);
+        var match = (Map<String, Object>) second.get("match");
+        assertThat((List<String>) match.get("any")).containsExactly("bu/santos");
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void buildQdrantFilter_parentPathBlocksDescendantsViaAncestorPaths() {
-        // Restricting "finance" should exclude finance/payroll and finance/budgets
-        // because those documents store "finance" in their ancestor_paths[] field.
-        // This test verifies the filter structure that makes hierarchy work.
-        Map<String, Object> filter = fgaService.buildQdrantFilter(List.of("finance"));
+        var filter = fgaService.buildQdrantFilter(List.of("bu/santos"));
 
-        List<Map<String, Object>> mustNot = (List<Map<String, Object>>) filter.get("must_not");
-        Map<String, Object> match = (Map<String, Object>) mustNot.get(0).get("match");
+        var mustNot = (List<Map<String, Object>>) filter.get("must_not");
+        var match = (Map<String, Object>) mustNot.get(0).get("match");
 
-        // The "any" list contains "finance" — Qdrant will exclude every document
-        // whose ancestor_paths array contains this value, which includes all children.
-        assertThat((List<String>) match.get("any")).contains("finance");
+        assertThat((List<String>) match.get("any")).contains("bu/santos");
     }
 }

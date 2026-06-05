@@ -1,6 +1,6 @@
 package com.enterprise.securechat.config;
 
-import com.enterprise.securechat.security.RolesExtractor;
+import com.enterprise.securechat.security.OgRolesAndGroupExtractor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -90,7 +90,7 @@ public class SecurityConfig {
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         var converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(new RolesExtractor());
+        converter.setJwtGrantedAuthoritiesConverter(new OgRolesAndGroupExtractor());
         return converter;
     }
 }

@@ -6,15 +6,25 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
 public class DlpClient {
 
-    // Entities that hr-manager users are permitted to see unredacted.
-    // FGA already controls which documents they can access; DLP should not
-    // re-redact financial figures that the role is explicitly authorised to view.
-    private static final List<String> HR_MANAGER_ALLOW = List.of("FINANCIAL_FIGURE");
+    // Roles that are authorised to see reserves volumes and financial figures unredacted.
+    // FGA already restricts which documents they can reach; DLP must not re-redact data
+    // that these roles are explicitly cleared to view.
+    private static final List<String> PRIVILEGED_ROLES = List.of(
+            "reserves-coordination",
+            "reserves-management"
+    );
+
+    private static final List<String> PRIVILEGED_ALLOW = List.of(
+            "OG_VOLUMES",
+            "RESERVES_VARIATION",
+            "FINANCIAL_FIGURE"
+    );
 
     private final RestClient restClient;
 
@@ -23,7 +33,10 @@ public class DlpClient {
     }
 
     public DlpResult analyze(String text, List<String> roles) {
-        var allow = roles.contains("hr-manager") ? HR_MANAGER_ALLOW : List.<String>of();
+        var allow = new ArrayList<String>();
+        if (roles.stream().anyMatch(PRIVILEGED_ROLES::contains)) {
+            allow.addAll(PRIVILEGED_ALLOW);
+        }
         var response = restClient.post()
                 .uri("/dlp/analyze")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -42,8 +55,8 @@ public class DlpClient {
     ) {}
 
     record DlpResponse(
-            @com.fasterxml.jackson.annotation.JsonProperty("cleaned_text") String cleanedText,
-            @com.fasterxml.jackson.annotation.JsonProperty("entities_redacted") int entitiesRedacted
+            @JsonProperty("cleaned_text") String cleanedText,
+            @JsonProperty("entities_redacted") int entitiesRedacted
     ) {}
 
     public record DlpResult(String cleanedText, int entitiesRedacted) {}

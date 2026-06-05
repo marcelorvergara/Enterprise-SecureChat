@@ -15,9 +15,12 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { CdkTextareaAutosize, TextFieldModule } from '@angular/cdk/text-field';
 import { ChatService, Message, SourceCitation } from '../../core/services/chat.service';
 import { SafeMarkdownPipe } from '../../shared/pipes/safe-markdown.pipe';
+import { BuUploadModalComponent } from './bu-upload-modal.component';
+import { keycloak } from '../../core/auth/keycloak.init';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -37,6 +40,7 @@ interface ChatMessage {
     MatChipsModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    MatDialogModule,
     TextFieldModule,
     SafeMarkdownPipe,
   ],
@@ -51,7 +55,17 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly chatService = inject(ChatService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly dialog = inject(MatDialog);
   private routeSub?: Subscription;
+
+  get canIngestDocuments(): boolean {
+    const roles = keycloak.realmAccess?.roles ?? [];
+    return roles.some(r => ['bu-user', 'reserves-management', 'reserves-coordination'].includes(r));
+  }
+
+  openBuUpload(): void {
+    this.dialog.open(BuUploadModalComponent, { width: '420px' });
+  }
 
   messages: ChatMessage[] = [];
   readonly messageControl = new FormControl('');

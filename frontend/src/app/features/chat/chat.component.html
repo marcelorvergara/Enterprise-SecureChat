@@ -115,6 +115,13 @@
         matTooltip="Attach a document for compliance verification">
         <mat-icon>attach_file</mat-icon>
       </button>
+      @if (canIngestDocuments) {
+        <button class="composer-icon-btn" type="button"
+          (click)="openBuUpload()" [disabled]="loading"
+          matTooltip="Index a restricted document into your BU knowledge base">
+          <mat-icon>cloud_upload</mat-icon>
+        </button>
+      }
       <span class="composer-hint">Enter ↵ to send &nbsp;·&nbsp; Shift+Enter for new line</span>
       <button class="composer-send" type="button"
         (click)="sendMessage()"
