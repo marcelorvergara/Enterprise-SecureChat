@@ -18,27 +18,18 @@ collection: enterprise_knowledge
 
 documents:
   # ── BU Santos ────────────────────────────────────────────────────────────────
-  - path: data/bu/santos/reserves/san-field-update.txt
-    subject_path: bu/santos/reserves
-
   - path: data/bu/santos/reserves/san-field-update.pdf
     subject_path: bu/santos/reserves
 
   # ── BU Campos ────────────────────────────────────────────────────────────────
-  - path: data/bu/campos/reserves/alb-field-update.txt
-    subject_path: bu/campos/reserves
-
   - path: data/bu/campos/reserves/alb-field-update.pdf
     subject_path: bu/campos/reserves
 
   # ── BU Solimoes ───────────────────────────────────────────────────────────────
-  - path: data/bu/solimoes/reserves/sol-field-update.txt
-    subject_path: bu/solimoes/reserves
-
   - path: data/bu/solimoes/reserves/sol-field-update.pdf
     subject_path: bu/solimoes/reserves
 
   # ── Regulatory / BAR ─────────────────────────────────────────────────────────
   # CONFIDENTIAL // RESERVES COORDINATION ONLY — blocked for reservoir-team
-  - path: data/regulatory/bar-questions/anp-2026-audit.txt
+  - path: data/regulatory/bar-questions/anp-2026-audit.pdf
     subject_path: bar-questions

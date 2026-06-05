@@ -1,0 +1,24 @@
+Proposal
+
+Possibility of including BAR questions/answers, with restricted access to Reserves Coordinations and Managements. Reservoir teams would not be able to access this content.
+Possibility for Business Unit users to insert context with access restrictions in Enterprise SecureChat. For example: Insert a business unit historical reserve volumes, but the content remains accessible only to this business unit Reserves Management.
+Access: only sectorial reserves managements and reserves coordinations.
+Content restriction:
+ANP Questioning may contain information that must remain restricted;
+Answer may contain information that must remain restricted;
+Corporate answers can be accessed by all Business Units respecting roles and restricted points.
+
+Points classified as restricted:
+
+Reserves Volumes
+End of Contract
+Economic Limits
+% Reserves Variations
+Recovery Factor
+Investment Years
+Investment Values
+Field Contract Information (Transfer of Rights Data / Dados Cessão Onerosa)
+Barrel and sales gas prices
+Document dates
+Official Letter, Letter, and Process Number
+
