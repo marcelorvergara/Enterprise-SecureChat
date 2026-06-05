@@ -45,6 +45,9 @@
         "http://localhost:4200",
         "http://localhost:80"
       ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:4200/*+http://localhost:80/*"
+      },
       "protocol": "openid-connect",
       "fullScopeAllowed": true,
       "defaultClientScopes": ["openid", "profile", "email", "roles", "groups"]

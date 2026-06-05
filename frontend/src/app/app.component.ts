@@ -75,6 +75,6 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   logout(): void {
-    keycloak.logout({ redirectUri: window.location.origin });
+    keycloak.logout({ redirectUri: window.location.origin + '/' });
   }
 }
