@@ -75,6 +75,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   logout(): void {
-    keycloak.logout({ redirectUri: window.location.origin + '/' });
+    const base = (keycloak.authServerUrl ?? 'http://localhost:8080').replace(/\/$/, '');
+    const redirectUri = encodeURIComponent(window.location.origin + '/');
+    keycloak.clearToken();
+    window.location.href =
+      `${base}/realms/enterprise-securechat/protocol/openid-connect/logout` +
+      `?client_id=securechat-frontend&post_logout_redirect_uri=${redirectUri}`;
   }
 }
