@@ -79,7 +79,7 @@ services:
 
   # ── Ingestion ── Python pipeline
   # Runs the embed API (:8001) permanently so the backend can embed user prompts.
-  # One-shot ingest: docker compose run --rm ingestion python -m src.main --manifest manifests/example-manifest.yaml
+  # One-shot ingest: docker compose run --rm ingestion python -m src.main --manifest manifests/og-manifest.yaml
   ingestion:
     build:
       context: ../ingestion

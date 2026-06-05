@@ -41,15 +41,13 @@ class FgaServiceTest {
     }
 
     @Test
-    void getRestrictedPaths_emptyRolesAndGroupsStillBlocksLegacyRoots() {
-        var paths = fgaService.getRestrictedPaths(List.of(), List.of());
-        assertThat(paths).containsAll(List.of("finance", "hr", "it-ops"));
-    }
+    void getRestrictedPaths_reservoirTeamAlwaysBlockedFromBarQuestionsEvenWithEmptyDb() {
+        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("reservoir-team")))
+            .thenReturn(List.of());
 
-    @Test
-    void getRestrictedPaths_nullRolesStillBlocksLegacyRoots() {
-        var paths = fgaService.getRestrictedPaths(null, List.of());
-        assertThat(paths).containsAll(List.of("finance", "hr", "it-ops"));
+        var paths = fgaService.getRestrictedPaths(List.of("reservoir-team"), List.of());
+
+        assertThat(paths).contains("bar-questions");
     }
 
     // ── Dynamic BU isolation ─────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-"""CLI entrypoint: python -m src.main --manifest manifests/example-manifest.yaml"""
+"""CLI entrypoint: python -m src.main --manifest manifests/og-manifest.yaml"""
 import argparse
 import os
 from datetime import datetime, timezone

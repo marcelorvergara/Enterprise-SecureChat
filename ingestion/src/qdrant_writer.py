@@ -7,10 +7,10 @@ VECTOR_SIZE = 384  # all-MiniLM-L6-v2 output dimensions
 def build_ancestor_paths(subject_path: str) -> list[str]:
     """Compute all ancestor path prefixes for a given subject_path.
 
-    "finance/payroll/q3" → ["finance", "finance/payroll", "finance/payroll/q3"]
+    "bu/santos/reserves" → ["bu", "bu/santos", "bu/santos/reserves"]
 
     Storing every ancestor in the Qdrant payload means a single
-    must_not.match.any filter on "finance" automatically excludes all
+    must_not.match.any filter on "bu/santos" automatically excludes all
     descendants — no recursive logic needed at query time.
     """
     parts = subject_path.split("/")

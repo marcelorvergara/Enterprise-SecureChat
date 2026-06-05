@@ -107,12 +107,14 @@ The realm configuration is imported automatically from [infra/keycloak/realm-exp
 4. Navigate to **Users → Add User**
 5. Create these test users:
 
-| Username | Role to assign | Purpose |
-|----------|---------------|---------|
-| `admin-user` | `admin` | Full access, admin panel |
-| `employee-one` | `employee` | General access, no restrictions |
-| `finance-analyst` | `finance-analyst` | Restricted from finance paths (add via admin panel) |
-| `hr-manager` | `hr-manager` | Restricted from HR paths (add via admin panel) |
+| Username | Role to assign | Group (BU) | Purpose |
+|----------|---------------|------------|---------|
+| `admin-user` | `admin` | — | Full access, admin panel |
+| `employee-one` | `employee` | — | General access, no restrictions |
+| `bu-santos` | `bu-user` | `BU_Santos` | BU Santos user — sees only `bu/santos/*` |
+| `bu-campos` | `bu-user` | `BU_Campos` | BU Campos user — sees only `bu/campos/*` |
+| `reservoir-bob` | `reservoir-team` | `BU_Santos` | Reservoir engineer — blocked from `bar-questions` |
+| `reserves-coord` | `reserves-coordination` | — | Cross-BU access, sees `bar-questions`; no upload |
 
 6. For each user, set a password under **Credentials** and assign their role under **Role Mappings → Realm Roles**
 
@@ -169,7 +171,7 @@ docker compose up keycloak qdrant dlp-service -d
 docker compose logs -f keycloak   # look for "Listening on: http://0.0.0.0:8080"
 
 # Step 3 — Ingest documents
-docker compose --profile ingestion run --rm ingestion python -m src.main --manifest manifests/example-manifest.yaml
+docker compose run --rm ingestion python -m src.main --manifest manifests/og-manifest.yaml
 
 # Step 4 — Start the ingestion embed sidecar (keeps model warm for backend)
 docker compose --profile ingestion up ingestion -d

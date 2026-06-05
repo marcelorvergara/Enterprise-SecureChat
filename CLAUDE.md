@@ -46,7 +46,7 @@ cd infra && docker compose up -d
 
 # 4. Index documents (one-shot — ingestion service must already be up)
 docker compose run --rm ingestion \
-  python -m src.main --manifest manifests/example-manifest.yaml
+  python -m src.main --manifest manifests/og-manifest.yaml
 ```
 
 ## Per-Component Dev Commands
@@ -71,7 +71,7 @@ uvicorn src.main:app --host 0.0.0.0 --port 8000
 # Ingestion / embed service
 cd ingestion
 pip install -r requirements.txt
-python -m src.main --manifest manifests/example-manifest.yaml   # one-shot ingest
+python -m src.main --manifest manifests/og-manifest.yaml   # one-shot ingest
 uvicorn src.embed_api:app --host 0.0.0.0 --port 8001            # persistent embed API
 ```
 
@@ -98,12 +98,22 @@ Enterprise-SecureChat/
 │   ├── features/chat/  ChatComponent (Material shell + custom CSS bubbles)
 │   ├── features/admin/ AdminComponent (stub, guarded by adminGuard)
 │   └── shared/pipes/   SafeMarkdownPipe (marked → DOMPurify → SafeHtml)
-├── ingestion/src/
-│   ├── parsers/        pdf_parser, excel_parser, image_parser (OCR)
-│   ├── chunker.py      LangChain RecursiveCharacterTextSplitter (512 tok / 64 overlap)
-│   ├── embedder.py     all-MiniLM-L6-v2
-│   ├── qdrant_writer.py  upsert + delete_by_doc_id for idempotency
-│   └── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse (2 pre-forked workers)
+├── ingestion/
+│   ├── src/
+│   │   ├── parsers/        pdf_parser, excel_parser, image_parser (OCR)
+│   │   ├── chunker.py      LangChain RecursiveCharacterTextSplitter (512 tok / 64 overlap)
+│   │   ├── embedder.py     all-MiniLM-L6-v2
+│   │   ├── qdrant_writer.py  upsert + delete_by_doc_id for idempotency
+│   │   └── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse (2 pre-forked workers)
+│   ├── data/
+│   │   ├── bu/
+│   │   │   ├── santos/reserves/    BU Santos reserves docs    (subject_path: bu/santos/reserves)
+│   │   │   ├── campos/reserves/    BU Campos reserves docs    (subject_path: bu/campos/reserves)
+│   │   │   └── solimoes/reserves/  BU Solimoes reserves docs  (subject_path: bu/solimoes/reserves)
+│   │   └── regulatory/
+│   │       └── bar-questions/      ANP/BAR regulatory content (subject_path: bar-questions)
+│   └── manifests/
+│       └── og-manifest.yaml        O&G document index — maps each file to its subject_path
 ├── infra/
 │   ├── docker-compose.yml
 │   ├── migrations/init.sql      Apply once via Neon SQL Editor
@@ -133,7 +143,7 @@ The DLP service requires the complete Claude answer to detect entities that span
 `dlp-service` is on the `internal` Docker network only — no `ports:` mapping in docker-compose. The backend calls it at `http://dlp-service:8000`. The Angular app never calls it.
 
 ### 6. Qdrant `ancestor_paths` payload is the FGA contract
-The ingestion pipeline writes `ancestor_paths: ["finance", "finance/payroll"]` for each chunk. `FgaService.buildQdrantFilter()` uses `must_not.match.any` on this field. If the field name changes in either place the security model silently breaks.
+The ingestion pipeline writes `ancestor_paths: ["bu/santos", "bu/santos/reserves"]` for each chunk. `FgaService.buildQdrantFilter()` uses `must_not.match.any` on this field. If the field name changes in either place the security model silently breaks.
 
 ### 7. Ingestion container runs the embed API persistently — no `profiles:` key
 The `ingestion` service in docker-compose has **no profile** so it starts with `docker compose up -d` and keeps the `/embed` endpoint available at `:8001`. The backend calls this for every user prompt. If the ingestion container is not running, all chat requests fail with `UnknownHostException: ingestion`. One-shot document indexing is done with `docker compose run --rm ingestion python -m src.main --manifest ...` (no `--profile` flag needed).
@@ -166,7 +176,7 @@ Realm: `enterprise-securechat` — imported automatically from `infra/keycloak/r
 | `securechat-frontend` | public (OIDC) | Angular `keycloak-js` |
 | `securechat-backend` | confidential | future service-account calls |
 
-Default roles: `admin`, `employee`, `finance-analyst`, `hr-manager`, `it-ops`.
+O&G roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coordination`, `reservoir-team`.
 
 ## Implementation Status
 

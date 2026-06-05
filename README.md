@@ -162,7 +162,7 @@ Services come up in this order (Docker healthchecks handle dependencies):
 2. Select realm **enterprise-securechat**
 3. Go to **Users → Add user** and create test users (e.g., `alice`, `bob`)
 4. Under each user's **Credentials** tab, set a password (disable "Temporary")
-5. Under **Role mappings**, assign realm roles: `admin`, `employee`, `finance-analyst`, `hr-manager`, or `it-ops`
+5. Under **Role mappings**, assign realm roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coordination`, or `reservoir-team`
 
 ### 5. Index documents
 
@@ -170,10 +170,10 @@ Services come up in this order (Docker healthchecks handle dependencies):
 # One-shot ingest (ingestion service is already running as part of docker compose up -d)
 cd infra
 docker compose run --rm ingestion \
-  python -m src.main --manifest manifests/example-manifest.yaml
+  python -m src.main --manifest manifests/og-manifest.yaml
 ```
 
-The example manifest indexes sample documents under `finance`, `hr`, and `it-ops` subject paths. Edit it to point at your real files.
+The O&G manifest indexes reserves documents under `bu/<name>/reserves` and regulatory content under `bar-questions`. Add new documents by creating entries in `og-manifest.yaml` with the appropriate `subject_path`.
 
 ### 6. Start chatting
 
@@ -197,17 +197,17 @@ Log in as a user with the `admin` role and navigate to **Admin** in the top bar.
 # List all roles and their restrictions
 curl -H "Authorization: Bearer <admin-jwt>" http://localhost:3000/api/admin/roles
 
-# Add a restriction: block finance-analyst from finance/payroll
+# Add a restriction: block reservoir-team from bar-questions
 curl -X POST \
   -H "Authorization: Bearer <admin-jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"subjectPath":"finance/payroll","reason":"Q3 data freeze"}' \
-  http://localhost:3000/api/admin/roles/finance-analyst/restrictions
+  -d '{"subjectPath":"bar-questions","reason":"Confidential regulatory content"}' \
+  http://localhost:3000/api/admin/roles/reservoir-team/restrictions
 
 # Remove the restriction
 curl -X DELETE \
   -H "Authorization: Bearer <admin-jwt>" \
-  "http://localhost:3000/api/admin/roles/finance-analyst/restrictions?subjectPath=finance/payroll"
+  "http://localhost:3000/api/admin/roles/reservoir-team/restrictions?subjectPath=bar-questions"
 ```
 
 Changes apply to the **next** query — the FGA filter is built at request time from the database, not cached.
@@ -221,14 +221,14 @@ Create a YAML manifest:
 ```yaml
 collection: enterprise_knowledge
 documents:
-  - path: data/finance/q3-report.pdf
-    subject_path: finance/reports
+  - path: data/bu/santos/reserves/san-field-update.pdf
+    subject_path: bu/santos/reserves
 
-  - path: data/hr/org-chart.png
-    subject_path: hr/org
+  - path: data/bu/campos/reserves/alb-field-update.pdf
+    subject_path: bu/campos/reserves
 
-  - path: data/it/runbook.pdf
-    subject_path: it-ops/runbooks
+  - path: data/regulatory/bar-questions/anp-2026-audit.txt
+    subject_path: bar-questions
 ```
 
 Run ingestion:
@@ -435,6 +435,7 @@ All variables are documented in `infra/.env.example`.
 |------|-------------|
 | `admin` | Full access + admin panel |
 | `employee` | General company documents |
-| `finance-analyst` | Finance documents (restrict payroll if needed) |
-| `hr-manager` | HR documents |
-| `it-ops` | IT runbooks and infrastructure docs |
+| `bu-user` | BU-scoped reserves documents (sees only own BU path) |
+| `reserves-management` | Cross-BU reserves access, can upload to index |
+| `reserves-coordination` | Cross-BU access including `bar-questions`; can upload to index |
+| `reservoir-team` | Reservoir engineering — read-only, blocked from `bar-questions` |

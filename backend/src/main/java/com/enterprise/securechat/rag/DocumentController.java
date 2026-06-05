@@ -30,7 +30,7 @@ public class DocumentController {
      * guarantees that a bu-user cannot index under another BU's path.
      */
     @PostMapping("/ingest")
-    @PreAuthorize("hasAnyRole('bu-user', 'reserves-management', 'reserves-coordination', 'reservoir-team')")
+    @PreAuthorize("hasAnyRole('bu-user', 'reserves-management', 'reserves-coordination')")
     public ResponseEntity<IngestClient.IngestResult> ingest(
             @RequestParam("file") MultipartFile file,
             Authentication auth) throws IOException {

@@ -14,10 +14,12 @@ import java.util.stream.Collectors;
 @Service
 public class FgaService {
 
-    // Legacy HR/Finance paths that must be invisible in the O&G deployment.
-    // These remain in Qdrant until the collection is purged; blocking them here
-    // prevents accidental retrieval while the purge is pending.
-    private static final List<String> LEGACY_ROOTS = List.of("finance", "hr", "it-ops");
+    // Hard-coded role restrictions that hold even when the DB row is absent.
+    // Mirrors the most critical role_restrictions entries as a defence-in-depth
+    // guarantee against misconfigured or empty tables.
+    private static final Map<String, List<String>> STATIC_ROLE_RESTRICTIONS = Map.of(
+        "reservoir-team", List.of("bar-questions")
+    );
 
     private final RoleRestrictionRepository restrictionRepository;
     private final String[] knownBus;
@@ -42,10 +44,12 @@ public class FgaService {
 
         if (roles != null && !roles.isEmpty()) {
             paths.addAll(restrictionRepository.findSubjectPathsByRoleNames(roles));
+            roles.forEach(role ->
+                paths.addAll(STATIC_ROLE_RESTRICTIONS.getOrDefault(role, List.of()))
+            );
         }
 
         paths.addAll(computeBuRestrictedPaths(groups));
-        paths.addAll(LEGACY_ROOTS);
 
         return paths;
     }

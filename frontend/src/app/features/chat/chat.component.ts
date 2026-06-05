@@ -60,7 +60,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   get canIngestDocuments(): boolean {
     const roles = keycloak.realmAccess?.roles ?? [];
-    return roles.some(r => ['bu-user', 'reserves-management', 'reserves-coordination', 'reservoir-team'].includes(r));
+    return roles.some(r => ['bu-user', 'reserves-management', 'reserves-coordination'].includes(r));
   }
 
   openBuUpload(): void {

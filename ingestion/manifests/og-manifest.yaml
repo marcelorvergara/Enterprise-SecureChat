@@ -1,0 +1,44 @@
+collection: enterprise_knowledge
+
+# Oil & Gas document manifest.
+#
+# subject_path drives FGA — the ingestion pipeline writes every ancestor segment
+# into ancestor_paths[], so restricting "bu/santos" blocks bu/santos/reserves,
+# bu/santos/bar-questions, etc. at Qdrant search time.
+#
+# Access matrix (who can read each subject_path):
+#   bu/santos/reserves    — GROUP_BU_SANTOS + reserves-management + reserves-coordination
+#   bu/campos/reserves    — GROUP_BU_CAMPOS + reserves-management + reserves-coordination
+#   bu/solimoes/reserves  — GROUP_BU_SOLIMOES + reserves-management + reserves-coordination
+#   bar-questions         — reserves-coordination only (reservoir-team explicitly blocked
+#                           via role_restrictions + STATIC_ROLE_RESTRICTIONS fallback)
+#
+# Upload-to-index roles: bu-user, reserves-management, reserves-coordination
+# (reservoir-team excluded — consumer role only)
+
+documents:
+  # ── BU Santos ────────────────────────────────────────────────────────────────
+  - path: data/bu/santos/reserves/san-field-update.txt
+    subject_path: bu/santos/reserves
+
+  - path: data/bu/santos/reserves/san-field-update.pdf
+    subject_path: bu/santos/reserves
+
+  # ── BU Campos ────────────────────────────────────────────────────────────────
+  - path: data/bu/campos/reserves/alb-field-update.txt
+    subject_path: bu/campos/reserves
+
+  - path: data/bu/campos/reserves/alb-field-update.pdf
+    subject_path: bu/campos/reserves
+
+  # ── BU Solimoes ───────────────────────────────────────────────────────────────
+  - path: data/bu/solimoes/reserves/sol-field-update.txt
+    subject_path: bu/solimoes/reserves
+
+  - path: data/bu/solimoes/reserves/sol-field-update.pdf
+    subject_path: bu/solimoes/reserves
+
+  # ── Regulatory / BAR ─────────────────────────────────────────────────────────
+  # CONFIDENTIAL // RESERVES COORDINATION ONLY — blocked for reservoir-team
+  - path: data/regulatory/bar-questions/anp-2026-audit.txt
+    subject_path: bar-questions
