@@ -1,0 +1,12 @@
+DOCUMENT_ID: BU-CAMPOS-ALB-RESERVES-2026
+CLASSIFICATION: RESTRICTED // CAMPOS RESERVES MANAGEMENT
+SUBJECT_PATH: bu/campos/reserves
+
+CAMPOS BASIN OPERATIONAL REPORT — ALBACORA FIELD UPDATE
+Data Context: Q2 2026 Operational Window
+Operator Data Source: Transfer of Rights Data (Dados Cessão Onerosa)
+
+RESERVES ANALYSIS AND METRICS:
+1. Reserves Volumes: The verified Proved Reserves (1P) volume for the Albacora field is explicitly locked at 450 MMboe.
+2. % Reserves Variations: The annual reconciliation audit indicates a dynamic positive adjustment resulting in +4.2% variations in overall asset book values.
+3. Pricing & Evaluation Boundaries: Financial formulas for feasibility calculations are definitively anchored to a base price of USD 75.50/bbl for export grades and a domestic sales gas allocation baseline.

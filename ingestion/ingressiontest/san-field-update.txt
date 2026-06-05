@@ -1,0 +1,12 @@
+DOCUMENT_ID: BU-SANTOS-SAN-RESERVES-2026
+CLASSIFICATION: RESTRICTED // SANTOS RESERVES MANAGEMENT
+SUBJECT_PATH: bu/santos/reserves
+
+SANTOS BASIN ASSET VALUATION — MERLUZA EXTRACTION DATA
+Data Context: Baseline Reference 2026
+Operational Context: Post-Salt Production Assessment
+
+RESERVES ANALYSIS AND METRICS:
+1. Reserves Volumes: The strategic asset reserve sheet lists the current total inventory volume at 125 MMboe for the main fault block.
+2. Investment Projections: Total development expenditure across the upcoming Investment Years requires an allocation of USD 145 million over a rolling 4-year plan.
+3. Recovery Improvements: Implementation of secondary water injection arrays is projected to increase the total Recovery Factor by an absolute margin of 3.5% over the historical field decay curves.

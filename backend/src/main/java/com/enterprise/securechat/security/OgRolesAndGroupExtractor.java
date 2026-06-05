@@ -35,9 +35,16 @@ public class OgRolesAndGroupExtractor implements Converter<Jwt, Collection<Grant
                 .forEach(authorities::add);
         }
 
-        List<String> groups = jwt.getClaim("groups");
+        // Keycloak's oidc-group-membership-mapper uses "group_membership" by default;
+        // realm exports may configure "groups". Accept either. Strip the leading "/"
+        // that Keycloak adds when full.path=true (e.g. "/BU_Solimoes" → "BU_SOLIMOES").
+        List<String> groups = jwt.getClaim("group_membership");
+        if (groups == null) {
+            groups = jwt.getClaim("groups");
+        }
         if (groups != null) {
             groups.stream()
+                .map(g -> g.startsWith("/") ? g.substring(1) : g)
                 .map(g -> (GrantedAuthority) new SimpleGrantedAuthority("GROUP_" + g.toUpperCase()))
                 .forEach(authorities::add);
         }
