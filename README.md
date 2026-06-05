@@ -28,13 +28,17 @@ flowchart TD
         Postgres[(PostgreSQL · Neon)]:::identity
     end
 
-    Ingestion[Ingestion Pipeline<br/>PDFs · Excel · Images → Vectors]:::data
+    subgraph Ingestion [Ingestion Service · :8001]
+        Embed[POST /embed<br/>all-MiniLM-L6-v2]:::data
+        Parse[POST /parse<br/>PDF · Excel · Image · Text]:::data
+        Indexer[One-shot indexer<br/>→ Qdrant]:::data
+    end
 
-    subgraph Backend [Spring Boot]
+    subgraph Backend [Spring Boot · :3000]
         API[API Gateway]:::backend
         Filter[JWT + Rate Limit Filter]:::backend
         RAG[RAG Orchestrator]:::backend
-        DLP[DLP Post-Processor]:::backend
+        DLPClient[DLP Post-Processor]:::backend
     end
 
     subgraph Storage [Storage & AI]
@@ -42,28 +46,42 @@ flowchart TD
         LLM[Claude claude-sonnet-4-6]:::ai
     end
 
-    Ingestion -->|Populates| VDB
+    subgraph DLPService [DLP Service · internal]
+        Presidio[Presidio · spaCy NER<br/>PII + Financial redaction]:::backend
+    end
+
+    Indexer -->|Populates| VDB
 
     User -->|1. Login| Keycloak
     Keycloak -->|2. Issues JWT| UI
     Keycloak -.->|Role data| Postgres
 
-    User -->|3. Question| UI
+    User -->|3a. Question| UI
+    User -->|3b. Question + File| UI
+
     UI -->|4. Prompt + JWT| API
+    UI -->|4b. Multipart + JWT| API
 
     API --> Filter
     Filter <-->|5. Restricted paths| Postgres
     Filter -->|6. Validated request| RAG
 
-    RAG -->|7. Semantic search + FGA filter| VDB
-    VDB -->|8. Permitted chunks| RAG
+    RAG -->|7a. Embed prompt| Embed
+    Embed -->|7b. Query vector| RAG
 
-    RAG -->|9. Prompt + context| LLM
-    LLM -->|10. Draft answer| RAG
+    RAG -->|8. Semantic search + FGA filter| VDB
+    VDB -->|9. Permitted chunks| RAG
 
-    RAG -->|11. Scan for PII/financials| DLP
-    DLP -->|12. Clean answer| UI
-    UI -->|13. Display| User
+    RAG -.->|10. Parse file ·verify only·| Parse
+    Parse -.->|11. Raw text ·ephemeral·| RAG
+
+    RAG -->|12. Prompt + context| LLM
+    LLM -->|13. Draft answer| RAG
+
+    RAG -->|14. Scan for PII/financials| DLPClient
+    DLPClient <-->|Presidio analysis| Presidio
+    DLPClient -->|15. Clean answer| UI
+    UI -->|16. Display| User
 ```
 
 ---
