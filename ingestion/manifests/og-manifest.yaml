@@ -33,3 +33,7 @@ documents:
   # CONFIDENTIAL // RESERVES COORDINATION ONLY — blocked for reservoir-team
   - path: data/regulatory/bar-questions/anp-2026-audit.pdf
     subject_path: bar-questions
+
+  # ── Corporate Answers / BAR ─────────────────────────────────────────────────────────
+  - path: data/corporate-answers/anp-vs-sec-certification-guide.pdf
+    subject_path: corporate-answers
