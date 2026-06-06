@@ -44,7 +44,7 @@ _collection: str = os.getenv("QDRANT_COLLECTION", "enterprise_knowledge")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _model, _qdrant
-    _model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    _model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333")
     qdrant_api_key = os.getenv("QDRANT_API_KEY")
     _qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api_key or None)

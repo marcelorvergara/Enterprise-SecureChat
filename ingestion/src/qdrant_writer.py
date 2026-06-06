@@ -1,7 +1,7 @@
 import uuid
 from qdrant_client import QdrantClient, models
 
-VECTOR_SIZE = 384  # all-MiniLM-L6-v2 output dimensions
+VECTOR_SIZE = 384  # paraphrase-multilingual-MiniLM-L12-v2 output dimensions
 
 
 def build_ancestor_paths(subject_path: str) -> list[str]:
