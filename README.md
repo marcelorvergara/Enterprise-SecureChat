@@ -19,9 +19,13 @@ flowchart TD
     classDef identity fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
     classDef data fill:#fffde7,stroke:#fbc02d,stroke-width:2px;
     classDef ai fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px;
+    classDef external fill:#fce4ec,stroke:#c62828,stroke-width:2px;
 
     User((User)):::user
     UI[Angular Frontend]:::frontend
+
+    ANP[ANP E&P Portal<br/>gov.br]:::external
+    Crawler[ANP Crawler<br/>src/crawler.py<br/>BFS depth 2 · SHA-256 state]:::data
 
     subgraph Identity [Identity Layer]
         Keycloak[Keycloak OIDC]:::identity
@@ -31,7 +35,7 @@ flowchart TD
     subgraph Ingestion [Ingestion Service · :8001]
         Embed[POST /embed<br/>all-MiniLM-L6-v2]:::data
         Parse[POST /parse<br/>PDF · Excel · Image · Text]:::data
-        Indexer[One-shot indexer<br/>→ Qdrant]:::data
+        Ingest[POST /ingest<br/>Parse → Chunk → Embed → Upsert]:::data
     end
 
     subgraph Backend [Spring Boot · :3000]
@@ -46,11 +50,16 @@ flowchart TD
         LLM[Claude claude-sonnet-4-6]:::ai
     end
 
-    subgraph DLPService [DLP Service · internal]
+    subgraph DLPService [DLP Service · internal only]
         Presidio[Presidio · spaCy NER<br/>PII + Financial redaction]:::backend
     end
 
-    Indexer -->|Populates| VDB
+    ANP -->|scrapes PDF / XLSX / XLS| Crawler
+    Crawler -->|POST /ingest · subject_path routing| Ingest
+    Ingest -->|upsert chunks + ancestor_paths| VDB
+
+    ManifestIngest([One-shot manifest<br/>src/main.py]):::data
+    ManifestIngest -.->|static BU documents| Ingest
 
     User -->|1. Login| Keycloak
     Keycloak -->|2. Issues JWT| UI
@@ -59,7 +68,7 @@ flowchart TD
     User -->|3a. Question| UI
     User -->|3b. Question + File| UI
 
-    UI -->|4. Prompt + JWT| API
+    UI -->|4a. Prompt + JWT| API
     UI -->|4b. Multipart + JWT| API
 
     API --> Filter
@@ -72,8 +81,8 @@ flowchart TD
     RAG -->|8. Semantic search + FGA filter| VDB
     VDB -->|9. Permitted chunks| RAG
 
-    RAG -.->|10. Parse file ·verify only·| Parse
-    Parse -.->|11. Raw text ·ephemeral·| RAG
+    RAG -.->|10. Parse file · verify only| Parse
+    Parse -.->|11. Raw text · ephemeral, never stored| RAG
 
     RAG -->|12. Prompt + context| LLM
     LLM -->|13. Draft answer| RAG
