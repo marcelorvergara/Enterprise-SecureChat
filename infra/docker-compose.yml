@@ -17,15 +17,17 @@ services:
     image: quay.io/keycloak/keycloak:24.0
     container_name: securechat-keycloak
     restart: unless-stopped
-    command: start-dev --import-realm
+    command: start --import-realm
     environment:
       KC_DB: postgres
       KC_DB_URL: ${NEON_KEYCLOAK_URL}
       KC_DB_SCHEMA: keycloak
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
+      KC_PROXY: "edge"
+      KC_CACHE: "local"
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
     ports:
@@ -46,7 +48,7 @@ services:
     container_name: securechat-qdrant
     restart: unless-stopped
     environment:
-      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-changeme}
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
     volumes:
       - qdrant_data:/qdrant/storage
     ports:
@@ -88,7 +90,7 @@ services:
     restart: unless-stopped
     environment:
       QDRANT_URL: http://qdrant:6333
-      QDRANT_API_KEY: ${QDRANT_API_KEY:-changeme}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
       EMBEDDING_MODEL: all-MiniLM-L6-v2
       EMBED_SERVICE_PORT: 8001
       UVICORN_WORKERS: 2
@@ -117,7 +119,7 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: enterprise-securechat
       QDRANT_URL: http://qdrant:6333
-      QDRANT_API_KEY: ${QDRANT_API_KEY:-changeme}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
       QDRANT_COLLECTION: enterprise_knowledge
       EMBED_SERVICE_URL: http://ingestion:8001
       DLP_SERVICE_URL: http://dlp-service:8000
