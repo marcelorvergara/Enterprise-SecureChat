@@ -80,6 +80,40 @@
   }
 }
 
+/* ── Compact overrides for the two top cards only ────────────────────── */
+.top-grid mat-card-title {
+  font-size: 0.75rem !important;
+}
+
+.top-grid mat-card-subtitle {
+  font-size: 0.75rem !important;
+}
+
+.top-grid .add-form {
+  margin-top: 8px;
+  gap: 0;
+}
+
+.top-grid mat-form-field {
+  font-size: 0.6125rem;
+}
+
+.top-grid .full-table {
+  font-size: 0.6125rem;
+  margin-top: 8px;
+}
+
+.top-grid .full-table th.mat-mdc-header-cell,
+.top-grid .full-table td.mat-mdc-cell {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.top-grid mat-chip {
+  font-size: 0.75rem;
+  min-height: 24px;
+}
+
 /* ── Card avatar icons ──────────────────────────────────────────────── */
 .icon-lock  { color: #3f51b5; }
 .icon-add   { color: #388e3c; }
@@ -185,6 +219,7 @@
 
 .audit-scroll-container .full-table {
   margin-top: 0;
+  margin-bottom: 12px;
 }
 
 /* ── Shared helpers ─────────────────────────────────────────────────── */
