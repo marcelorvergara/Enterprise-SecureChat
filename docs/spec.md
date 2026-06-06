@@ -37,7 +37,7 @@ Architecture diagram: see [mermaid.txt](mermaid.txt).
 | **Identity** | Keycloak 24 (Docker) | OIDC token issuer, user/role management, AD emulation |
 | **FGA Registry** | Neon PostgreSQL | Stores role → subject_path restriction mappings and audit logs |
 | **Vector DB** | Qdrant 1.9 (Docker) | Stores document chunk embeddings with FGA metadata for filtered search |
-| **Ingestion** | Python 3.11 | Parses PDFs/Excel/images/text, chunks, embeds, upserts into Qdrant with FGA metadata; also exposes `/parse` for ephemeral document text extraction |
+| **Ingestion** | Python 3.11 | Parses PDFs/Excel/images/text, chunks, embeds, upserts into Qdrant with FGA metadata; exposes `/parse` for ephemeral document text extraction and `/ingest` for crawler-driven indexing; `crawler.py` auto-discovers ANP regulatory documents |
 | **DLP Service** | Python FastAPI + Presidio | Scans LLM answers for PII and sensitive values, replaces with `[REDACTED]` |
 | **LLM** | Claude API (claude-sonnet-4-6) | Generates natural language answers from retrieved context |
 
@@ -195,6 +195,17 @@ file: <binary>   // .pdf, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif, .txt, .md
 { "text": "...", "filename": "runbook.pdf" }
 ```
 
+#### `POST /ingest` (ingestion:8001)
+Accepts a file and a `bu_path` form field. Parses, chunks, embeds, and upserts the document into Qdrant under the given `subject_path`. Called by the ANP crawler for every discovered document. Idempotent — calls `delete_by_doc_id` before upserting. The `doc_id` is derived as `uuid5(NAMESPACE_URL, f"{bu_path}/{filename}")`.
+```
+// Request (multipart/form-data)
+file:    <binary>        // .pdf, .xlsx, .xls, .png, .jpg, .jpeg
+bu_path: "corporate-answers"   // subject_path to assign to all chunks
+
+// Response
+{ "doc_id": "uuid", "chunks": 14, "filename": "relatorio.pdf" }
+```
+
 ---
 
 ## 6. Security Model
@@ -234,9 +245,10 @@ After the LLM generates its answer, the full text is sent to Presidio (DLP servi
 ## 7. Ingestion Pipeline
 
 ### Document Parsers
-- **PDF** — PyMuPDF: extracts text per page, then chunked by `RecursiveCharacterTextSplitter`
-- **Excel** — openpyxl: row-based chunks with column headers prepended as context
-- **Image** — Pillow + pytesseract OCR: entire image OCR'd as a single chunk
+- **PDF** — PyMuPDF: extracts text per page; falls back to Tesseract OCR (`por+eng`) for scanned pages with no embedded text
+- **Excel `.xlsx`** — openpyxl (read-only, lazy iterator): first 30 data rows per sheet as row-level chunks with headers prepended; lazy iteration prevents memory overflow on large operational spreadsheets
+- **Excel `.xls`** — xlrd: same 30-row cap and header-prefix format for legacy Excel 97-2003 binary files
+- **Image** — Pillow + pytesseract OCR (`por+eng`): entire image OCR'd as a single chunk
 - **Plain text** (`.txt`, `.md`, `.csv`) — read as UTF-8; used only by `POST /parse` for ephemeral verification, never chunked or indexed
 
 ### Chunking
@@ -244,7 +256,7 @@ After the LLM generates its answer, the full text is sent to Presidio (DLP servi
 - Each chunk gets the full `ancestor_paths` array computed from its `subject_path`
 
 ### Idempotency
-Point IDs are deterministic: `uuid5(NAMESPACE_URL, f"{doc_id}:{chunk_index}")`. Re-ingesting the same file overwrites existing vectors.
+Point IDs are deterministic: `uuid5(NAMESPACE_URL, f"{doc_id}:{chunk_index}")`. Re-ingesting the same file overwrites existing vectors. The `/ingest` endpoint calls `delete_by_doc_id(doc_id)` before every upsert.
 
 ### Vector Lifecycle (path moves)
 When a document is moved to a new `subject_path`, old vectors retain stale `ancestor_paths`. The ingestion CLI must call `delete_by_doc_id(doc_id)` before re-ingesting. The manifest supports `previous_path` to trigger this automatically.
@@ -260,6 +272,28 @@ documents:
   - path: data/hr/org-chart.png
     subject_path: hr/org
 ```
+
+### ANP Regulatory Crawler
+
+`ingestion/src/crawler.py` is a standalone BFS scraper that automatically discovers and indexes regulatory documents from the ANP Exploração e Produção portal (`gov.br/anp/…/exploracao-e-producao-de-oleo-e-gas`).
+
+**Crawl strategy:** BFS from the root URL up to depth 2, staying inside the ANP E&P URL prefix. On each page it collects all `.pdf`, `.xlsx`, and `.xls` hrefs. All file URLs are de-duplicated across pages before downloading.
+
+**Subject-path routing** (by URL keyword matching):
+
+| URL contains | `subject_path` assigned |
+|---|---|
+| `reserva`, `recursos`, or `bar` | `bar-questions` |
+| anything else | `corporate-answers` |
+
+**State tracking:** `ingestion/data/.crawler_state.json` stores `{filename → SHA-256}`. Files whose hash matches are skipped. Failed or interrupted files are not written to state and are retried on the next run.
+
+**Operational limits:**
+- 3-second pause between HTTP requests (gov.br CDN rate limiting)
+- 50 MB max per file — oversized files are skipped with a warning
+- 300-second POST timeout to `/ingest` (allows Tesseract OCR on long scanned PDFs)
+
+**Key constraint:** The crawler posts to the persistent `ingestion` service container via `POST /ingest`. If the container image is rebuilt (e.g., after updating a parser), the persistent container must be restarted (`docker compose up -d --no-deps ingestion`) before the crawler is re-run, otherwise the crawler container sees the new image but the ingestion container still runs the old code.
 
 ---
 

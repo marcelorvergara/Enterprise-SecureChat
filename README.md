@@ -216,6 +216,10 @@ Changes apply to the **next** query — the FGA filter is built at request time 
 
 ## Adding Documents
 
+There are two ways to get documents into the knowledge base. Both paths are fully idempotent — re-running never creates duplicate vectors.
+
+### Option A — Static manifest (company BU documents)
+
 Create a YAML manifest:
 
 ```yaml
@@ -238,7 +242,44 @@ docker compose run --rm ingestion \
   python -m src.main --manifest manifests/your-manifest.yaml
 ```
 
-Ingestion is **idempotent** — re-running the same manifest replaces existing chunks rather than duplicating them. Moving a document to a new `subject_path` requires deleting the old vectors first; the ingestion pipeline handles this automatically via `delete_by_doc_id` before each upsert.
+### Option B — ANP Regulatory Crawler (automated)
+
+`ingestion/src/crawler.py` discovers and indexes documents from the ANP Exploração e Produção portal automatically.
+
+```bash
+# Run via Docker (recommended — uses same network as ingestion service)
+docker compose run --rm \
+  -e INGEST_URL=http://ingestion:8001/ingest \
+  ingestion python -m src.crawler
+
+# Run locally (ingestion service must be running separately)
+INGEST_URL=http://localhost:8001/ingest python -m src.crawler
+```
+
+**How it works:**
+
+1. BFS crawl of `gov.br/anp/pt-br/assuntos/exploracao-e-producao-de-oleo-e-gas` up to depth 2 — discovers all sub-pages in the ANP E&P section.
+2. Collects all `.pdf`, `.xlsx`, and `.xls` links across all pages (de-duplicated).
+3. Downloads each file and checks its SHA-256 hash against `ingestion/data/.crawler_state.json` — unchanged files are skipped.
+4. Routes each file to the correct `subject_path`:
+   - URL contains `reserva`, `recursos`, or `bar` → `bar-questions`
+   - Everything else → `corporate-answers`
+5. POSTs the file to the `/ingest` endpoint, which parses, chunks, embeds, and upserts to Qdrant.
+6. Saves the state file so subsequent runs only process new or changed documents.
+
+**Supported file types:** `.pdf` (with OCR fallback for scanned pages), `.xlsx`, `.xls`
+
+**Rate limiting:** 3-second pause between requests to avoid gov.br CDN throttling.
+
+**Stopping mid-run is safe** — documents already ingested before the interruption are live in Qdrant immediately. The state file is written only at the end, so any files not recorded will be retried on the next run.
+
+If the crawler is rebuilt (e.g. after updating parsers), restart the persistent ingestion container before running it:
+
+```bash
+cd infra
+docker compose up -d --no-deps ingestion   # picks up new image
+docker compose run --rm -e INGEST_URL=http://ingestion:8001/ingest ingestion python -m src.crawler
+```
 
 ---
 
@@ -359,6 +400,7 @@ cd ingestion
 pip install -r requirements.txt
 python -m src.main --manifest manifests/example-manifest.yaml   # one-shot ingest
 uvicorn src.embed_api:app --host 0.0.0.0 --port 8001            # persistent embed API
+INGEST_URL=http://localhost:8001/ingest python -m src.crawler    # ANP crawler (service must be up)
 pytest tests/                                                     # run ingestion tests
 ```
 
@@ -394,11 +436,12 @@ Enterprise-SecureChat/
 │   ├── features/admin/ AdminComponent (restriction matrix, add form, audit log)
 │   └── shared/pipes/   SafeMarkdownPipe (marked → DOMPurify → SafeHtml)
 ├── ingestion/src/
-│   ├── parsers/        pdf_parser, excel_parser, image_parser (OCR)
+│   ├── parsers/        pdf_parser (OCR fallback), excel_parser (xlsx + xls), image_parser (OCR por+eng)
 │   ├── chunker.py      512-token chunks / 64-token overlap
 │   ├── embedder.py     all-MiniLM-L6-v2 (384-dim)
 │   ├── qdrant_writer.py  upsert + delete_by_doc_id (idempotent)
-│   └── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse (2 pre-forked workers)
+│   ├── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse, POST /ingest (2 pre-forked workers)
+│   └── crawler.py      ANP E&P portal BFS scraper — depth 2, SHA-256 state, auto subject_path routing
 ├── ingestion/tests/
 │   ├── test_chunker.py
 │   └── test_qdrant_writer.py

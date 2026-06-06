@@ -73,6 +73,11 @@ cd ingestion
 pip install -r requirements.txt
 python -m src.main --manifest manifests/og-manifest.yaml   # one-shot ingest
 uvicorn src.embed_api:app --host 0.0.0.0 --port 8001            # persistent embed API
+
+# ANP crawler (requires ingestion service to be running)
+INGEST_URL=http://localhost:8001/ingest python -m src.crawler   # local dev
+# or via Docker:
+# docker compose run --rm -e INGEST_URL=http://ingestion:8001/ingest ingestion python -m src.crawler
 ```
 
 ## Project Structure
@@ -100,18 +105,21 @@ Enterprise-SecureChat/
 │   └── shared/pipes/   SafeMarkdownPipe (marked → DOMPurify → SafeHtml)
 ├── ingestion/
 │   ├── src/
-│   │   ├── parsers/        pdf_parser, excel_parser, image_parser (OCR)
+│   │   ├── parsers/        pdf_parser, excel_parser (xlsx + xls), image_parser (OCR por+eng)
 │   │   ├── chunker.py      LangChain RecursiveCharacterTextSplitter (512 tok / 64 overlap)
 │   │   ├── embedder.py     all-MiniLM-L6-v2
 │   │   ├── qdrant_writer.py  upsert + delete_by_doc_id for idempotency
-│   │   └── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse (2 pre-forked workers)
+│   │   ├── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse, POST /ingest (2 pre-forked workers)
+│   │   └── crawler.py      ANP E&P portal BFS scraper → /ingest API
 │   ├── data/
 │   │   ├── bu/
 │   │   │   ├── santos/reserves/    BU Santos reserves docs    (subject_path: bu/santos/reserves)
 │   │   │   ├── campos/reserves/    BU Campos reserves docs    (subject_path: bu/campos/reserves)
 │   │   │   └── solimoes/reserves/  BU Solimoes reserves docs  (subject_path: bu/solimoes/reserves)
-│   │   └── regulatory/
-│   │       └── bar-questions/      ANP/BAR regulatory content (subject_path: bar-questions)
+│   │   ├── regulatory/
+│   │   │   └── bar-questions/      ANP/BAR regulatory content (subject_path: bar-questions)
+│   │   └── corporate-answers/      ANP crawler output (subject_path: corporate-answers)
+│   │   └── .crawler_state.json     SHA-256 state map — tracks what the crawler has already ingested
 │   └── manifests/
 │       └── og-manifest.yaml        O&G document index — maps each file to its subject_path
 ├── infra/
@@ -154,6 +162,9 @@ The `ingestion` service in docker-compose has **no profile** so it starts with `
 ### 10. `ClaudeService.complete()` — `maxTokens` overload
 The no-arg overload defaults to 1024 tokens (sufficient for regular chat). `/api/chat/verify` calls the two-arg overload with `maxTokens=2048` so compliance comparison reports are not truncated. Do not increase the default — 1024 is intentional for chat responses.
 
+### 11. Crawler and manifest are two independent ingestion paths — do not merge
+The crawler (`src/crawler.py`) sends files to `POST /ingest` at runtime; the manifest pipeline (`src/main.py`) reads a YAML file at startup. Both share the same `/ingest` endpoint and the same `delete_by_doc_id` + upsert idempotency guarantee (`doc_id = uuid5(NAMESPACE_URL, f"{bu_path}/{filename}")`). Documents that arrive from the crawler are tracked in `data/.crawler_state.json` (SHA-256 hash per filename). If this file is deleted, the next crawler run re-ingests everything from scratch — safe but slow. Never index crawler-managed files in the manifest or vice versa; the two paths can produce duplicate vectors if the same file is given different `bu_path` values by each path.
+
 ### 8. FINANCIAL_FIGURE recognizer only catches amounts with explicit currency markers
 The custom Presidio recognizer (`dlp-service/src/custom_recognizers/financial_figures.py`) matches patterns that include a currency symbol (`$`, `€`, `R$`), a currency code prefix (`USD`, `EUR`, `BRL`), or a magnitude qualifier (`million`, `billion`, `thousand`). A bare number like `450,000` with no currency marker is **not** redacted. This is a known gap. Fix by adding a standalone large-number pattern (e.g. numbers ≥ 1,000 with comma separators in a financial context) or by having the system prompt instruct Claude to always include currency symbols when citing amounts.
 
@@ -191,6 +202,7 @@ O&G roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coor
 | **M6** | ✅ Complete | `AdminController` (restriction CRUD, `@PreAuthorize("hasRole('admin')")`), Bucket4j rate limiting (20 req/min per `sub`), security headers, Angular admin panel |
 | **M7** | ✅ Complete | JUnit 5 + Mockito backend tests (`FgaServiceTest`, `RagServiceTest`), pytest ingestion tests (chunker, ancestor_paths, deterministic IDs), pytest DLP tests (FINANCIAL_FIGURE recognizer + redaction), root `README.md` |
 | **M8** | ✅ Complete | Document Verification: ingestion `POST /parse` endpoint (PDF/Excel/image/text), `ParseClient`, `RagService.chatWithDocument()`, `POST /api/chat/verify` (multipart), `ClaudeService` maxTokens overload (2048), Angular file attachment UI with chip strip |
+| **M9** | ✅ Complete | ANP Regulatory Crawler: `ingestion/src/crawler.py` — BFS scraper (depth 2) over ANP E&P portal, SHA-256 state tracking, `subject_path` routing by URL keyword (`reserva`/`recursos`/`bar` → `bar-questions`; else → `corporate-answers`), `.xls` support via xlrd, Portuguese OCR (`por+eng`), 3 s rate limiting, 300 s ingest timeout for scanned PDFs |
 
 ## Environment Variables Reference
 
