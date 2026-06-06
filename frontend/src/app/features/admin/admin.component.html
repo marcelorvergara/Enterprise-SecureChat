@@ -1,108 +1,161 @@
 <div class="admin-container">
 
-  <!-- ── FGA Restriction Matrix ──────────────────────────────────────── -->
-  <mat-card class="section-card">
-    <mat-card-header>
-      <mat-icon mat-card-avatar class="icon-lock">lock</mat-icon>
-      <mat-card-title>FGA Restriction Matrix</mat-card-title>
-      <mat-card-subtitle>Active path restrictions by role — changes apply instantly to the next query</mat-card-subtitle>
-    </mat-card-header>
-    <mat-card-content>
-      @if (loadingRoles) {
-        <div class="loading-row">
-          <mat-spinner diameter="26"></mat-spinner>
-          <span>Loading restrictions…</span>
-        </div>
-      } @else {
-        <table mat-table [dataSource]="restrictionDataSource" class="full-table">
+  <!-- ── Page Header ────────────────────────────────────────────────────── -->
+  <header class="page-header">
+    <div class="page-header-text">
+      <h1 class="page-title">Access Control</h1>
+      <p class="page-subtitle">Manage Fine-Grained Access restrictions and review the FGA audit trail</p>
+    </div>
+    <div class="stat-pills">
+      <span class="stat-pill stat-pill--primary">
+        <mat-icon class="stat-icon">lock</mat-icon>
+        {{ totalRestrictions }} restriction{{ totalRestrictions !== 1 ? 's' : '' }} active
+      </span>
+      <span class="stat-pill stat-pill--accent">
+        <mat-icon class="stat-icon">groups</mat-icon>
+        {{ rolesAffectedCount }} role{{ rolesAffectedCount !== 1 ? 's' : '' }} affected
+      </span>
+      <span class="stat-pill stat-pill--warn">
+        <mat-icon class="stat-icon">history</mat-icon>
+        {{ auditTotalElements }} audit event{{ auditTotalElements !== 1 ? 's' : '' }}
+      </span>
+    </div>
+  </header>
 
-          <ng-container matColumnDef="roleName">
-            <th mat-header-cell *matHeaderCellDef>Role</th>
-            <td mat-cell *matCellDef="let row">
-              <mat-chip-set><mat-chip>{{ row.roleName }}</mat-chip></mat-chip-set>
-            </td>
-          </ng-container>
+  <!-- ── Top two-column grid ────────────────────────────────────────────── -->
+  <div class="top-grid">
 
-          <ng-container matColumnDef="subjectPath">
-            <th mat-header-cell *matHeaderCellDef>Restricted Path</th>
-            <td mat-cell *matCellDef="let row"><code class="path">{{ row.subjectPath }}</code></td>
-          </ng-container>
+    <!-- ── Add Restriction (LEFT) ─────────────────────────────────────── -->
+    <mat-card class="section-card">
+      <mat-card-header>
+        <mat-icon mat-card-avatar class="icon-add">add_circle</mat-icon>
+        <mat-card-title>Add Restriction</mat-card-title>
+        <mat-card-subtitle>Block a role from accessing a document path and all its descendants</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <form [formGroup]="addForm" (ngSubmit)="addRestriction()" class="add-form">
 
-          <ng-container matColumnDef="reason">
-            <th mat-header-cell *matHeaderCellDef>Reason</th>
-            <td mat-cell *matCellDef="let row">{{ row.reason || '—' }}</td>
-          </ng-container>
+          <mat-form-field appearance="outline">
+            <mat-label>Role</mat-label>
+            <mat-select formControlName="roleName" required>
+              @for (role of availableRoles; track role) {
+                <mat-option [value]="role">{{ role }}</mat-option>
+              }
+            </mat-select>
+            <mat-error>Select a role.</mat-error>
+          </mat-form-field>
 
-          <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef></th>
-            <td mat-cell *matCellDef="let row">
-              <button mat-icon-button color="warn"
-                      (click)="deleteRestriction(row)"
-                      matTooltip="Remove restriction">
-                <mat-icon>delete_outline</mat-icon>
-              </button>
-            </td>
-          </ng-container>
+          <mat-form-field appearance="outline">
+            <mat-label>Subject Path</mat-label>
+            <input matInput formControlName="subjectPath"
+                   placeholder="e.g. bu/santos  or  bu/santos/reserves" required />
+            <mat-hint>Restricting <code>bu/santos</code> blocks <code>bu/santos/reserves</code>, <code>bu/santos/reports</code>, etc.</mat-hint>
+            <mat-error>Lowercase letters, numbers, hyphens and slashes only.</mat-error>
+          </mat-form-field>
 
-          <tr mat-header-row *matHeaderRowDef="restrictionColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: restrictionColumns;"></tr>
-          <tr class="mat-row" *matNoDataRow>
-            <td class="mat-cell no-data" colspan="4">No restrictions defined — all roles have full access.</td>
-          </tr>
-        </table>
-      }
-    </mat-card-content>
-  </mat-card>
+          <mat-form-field appearance="outline">
+            <mat-label>Reason (optional)</mat-label>
+            <input matInput formControlName="reason"
+                   placeholder="e.g. Legal compliance, data sensitivity…" />
+          </mat-form-field>
 
-  <!-- ── Add Restriction ─────────────────────────────────────────────── -->
-  <mat-card class="section-card">
-    <mat-card-header>
-      <mat-icon mat-card-avatar class="icon-add">add_circle</mat-icon>
-      <mat-card-title>Add Restriction</mat-card-title>
-      <mat-card-subtitle>Block a role from accessing a document path and all its descendants</mat-card-subtitle>
-    </mat-card-header>
-    <mat-card-content>
-      <form [formGroup]="addForm" (ngSubmit)="addRestriction()" class="add-form">
-
-        <mat-form-field appearance="outline">
-          <mat-label>Role</mat-label>
-          <mat-select formControlName="roleName" required>
-            @for (role of availableRoles; track role) {
-              <mat-option [value]="role">{{ role }}</mat-option>
+          <button mat-raised-button color="primary" type="submit"
+                  [disabled]="addForm.invalid || submitting"
+                  class="submit-btn">
+            @if (submitting) {
+              <mat-spinner diameter="18"></mat-spinner>
+            } @else {
+              <mat-icon>add</mat-icon>
             }
-          </mat-select>
-          <mat-error>Select a role.</mat-error>
-        </mat-form-field>
+            Add Restriction
+          </button>
+        </form>
+      </mat-card-content>
+    </mat-card>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Subject Path</mat-label>
-          <input matInput formControlName="subjectPath"
-                 placeholder="e.g. finance  or  finance/payroll" required />
-          <mat-hint>Restricting <code>finance</code> blocks <code>finance/payroll</code>, <code>finance/budgets</code>, etc.</mat-hint>
-          <mat-error>Lowercase letters, numbers, hyphens and slashes only.</mat-error>
-        </mat-form-field>
+    <!-- ── FGA Restriction Matrix (RIGHT) ─────────────────────────────── -->
+    <mat-card class="section-card">
+      <mat-card-header>
+        <mat-icon mat-card-avatar class="icon-lock">lock</mat-icon>
+        <mat-card-title>Restriction Matrix</mat-card-title>
+        <mat-card-subtitle>Active path restrictions by role — changes apply instantly to the next query</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        @if (loadingRoles) {
+          <div class="loading-row">
+            <mat-spinner diameter="26"></mat-spinner>
+            <span>Loading restrictions…</span>
+          </div>
+        } @else {
+          <table mat-table [dataSource]="restrictionDataSource" class="full-table">
 
-        <mat-form-field appearance="outline">
-          <mat-label>Reason (optional)</mat-label>
-          <input matInput formControlName="reason"
-                 placeholder="e.g. Legal compliance, data sensitivity…" />
-        </mat-form-field>
+            <ng-container matColumnDef="roleName">
+              <th mat-header-cell *matHeaderCellDef>Role</th>
+              <td mat-cell *matCellDef="let row">
+                <mat-chip-set><mat-chip>{{ row.roleName }}</mat-chip></mat-chip-set>
+              </td>
+            </ng-container>
 
-        <button mat-raised-button color="primary" type="submit"
-                [disabled]="addForm.invalid || submitting"
-                class="submit-btn">
-          @if (submitting) {
-            <mat-spinner diameter="18"></mat-spinner>
-          } @else {
-            <mat-icon>add</mat-icon>
-          }
-          Add Restriction
-        </button>
-      </form>
-    </mat-card-content>
-  </mat-card>
+            <ng-container matColumnDef="subjectPath">
+              <th mat-header-cell *matHeaderCellDef>Restricted Path</th>
+              <td mat-cell *matCellDef="let row"><code class="path">{{ row.subjectPath }}</code></td>
+            </ng-container>
 
-  <!-- ── Audit Log ───────────────────────────────────────────────────── -->
+            <ng-container matColumnDef="reason">
+              <th mat-header-cell *matHeaderCellDef>Reason</th>
+              <td mat-cell *matCellDef="let row">{{ row.reason || '—' }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="createdAt">
+              <th mat-header-cell *matHeaderCellDef>Created</th>
+              <td mat-cell *matCellDef="let row">
+                <span [matTooltip]="(row.createdAt | date:'full':'UTC') || ''">
+                  {{ row.createdAt | date:'MMM d':'UTC' }}
+                </span>
+              </td>
+            </ng-container>
+
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef></th>
+              <td mat-cell *matCellDef="let row" class="actions-cell">
+                @if (confirmDeleteId === row.id) {
+                  <span class="confirm-delete-inline">
+                    <button mat-button color="warn" (click)="confirmDelete(row)" class="confirm-btn">
+                      <mat-icon>check</mat-icon> Remove
+                    </button>
+                    <button mat-button (click)="cancelDelete()" class="cancel-btn">
+                      Cancel
+                    </button>
+                  </span>
+                } @else {
+                  <button mat-icon-button color="warn"
+                          (click)="requestDelete(row)"
+                          matTooltip="Remove restriction">
+                    <mat-icon>delete_outline</mat-icon>
+                  </button>
+                }
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="restrictionColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: restrictionColumns;"></tr>
+            <tr class="mat-row" *matNoDataRow>
+              <td class="mat-cell empty-state-cell" [attr.colspan]="restrictionColumns.length">
+                <div class="empty-state">
+                  <mat-icon class="empty-state-icon">security</mat-icon>
+                  <span class="empty-state-heading">No restrictions defined</span>
+                  <span class="empty-state-sub">All roles have full access to all document paths.</span>
+                </div>
+              </td>
+            </tr>
+          </table>
+        }
+      </mat-card-content>
+    </mat-card>
+
+  </div><!-- /top-grid -->
+
+  <!-- ── Audit Log ──────────────────────────────────────────────────────── -->
   <mat-card class="section-card">
     <mat-card-header>
       <mat-icon mat-card-avatar class="icon-audit">history</mat-icon>
@@ -116,6 +169,7 @@
           <span>Loading audit log…</span>
         </div>
       } @else {
+        <div class="audit-scroll-container">
         <table mat-table [dataSource]="auditDataSource" class="full-table">
 
           <ng-container matColumnDef="accessedAt">
@@ -126,7 +180,7 @@
           </ng-container>
 
           <ng-container matColumnDef="userSub">
-            <th mat-header-cell *matHeaderCellDef>User (sub)</th>
+            <th mat-header-cell *matHeaderCellDef>User ID</th>
             <td mat-cell *matCellDef="let row">
               <span class="mono" [matTooltip]="row.userSub">{{ row.userSub | slice:0:14 }}…</span>
             </td>
@@ -159,7 +213,7 @@
           </ng-container>
 
           <ng-container matColumnDef="queryHash">
-            <th mat-header-cell *matHeaderCellDef>Query Hash (SHA-256)</th>
+            <th mat-header-cell *matHeaderCellDef>Query Hash</th>
             <td mat-cell *matCellDef="let row">
               <span class="mono" [matTooltip]="row.queryHash">{{ row.queryHash | slice:0:16 }}…</span>
             </td>
@@ -171,6 +225,7 @@
             <td class="mat-cell no-data" colspan="5">No audit entries yet.</td>
           </tr>
         </table>
+        </div><!-- /audit-scroll-container -->
 
         <mat-paginator
           [length]="auditTotalElements"

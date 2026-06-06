@@ -59,7 +59,7 @@ export class AdminComponent implements OnInit {
   // ── Restriction table ────────────────────────────────────────────────────
   roles: RoleWithRestrictions[] = [];
   restrictionDataSource = new MatTableDataSource<RestrictionRow>();
-  restrictionColumns = ['roleName', 'subjectPath', 'reason', 'actions'];
+  restrictionColumns = ['roleName', 'subjectPath', 'reason', 'createdAt', 'actions'];
   availableRoles: string[] = [];
   loadingRoles = false;
 
@@ -73,6 +73,7 @@ export class AdminComponent implements OnInit {
   // ── Add restriction form ─────────────────────────────────────────────────
   addForm!: FormGroup;
   submitting = false;
+  confirmDeleteId: string | null = null;
 
   ngOnInit(): void {
     this.addForm = this.fb.group({
@@ -128,7 +129,12 @@ export class AdminComponent implements OnInit {
     });
   }
 
-  deleteRestriction(row: RestrictionRow): void {
+  requestDelete(row: RestrictionRow): void {
+    this.confirmDeleteId = row.id;
+  }
+
+  confirmDelete(row: RestrictionRow): void {
+    this.confirmDeleteId = null;
     this.adminService.removeRestriction(row.roleName, row.subjectPath).subscribe({
       next: () => {
         this.snackBar.open(`Removed: ${row.roleName} → ${row.subjectPath}`, 'OK', { duration: 3000 });
@@ -136,6 +142,10 @@ export class AdminComponent implements OnInit {
       },
       error: () => this.snackBar.open('Failed to remove restriction.', 'Dismiss', { duration: 4000 }),
     });
+  }
+
+  cancelDelete(): void {
+    this.confirmDeleteId = null;
   }
 
   loadAuditLog(page: number, size: number): void {
@@ -156,5 +166,13 @@ export class AdminComponent implements OnInit {
   onAuditPage(event: PageEvent): void {
     this.auditPageSize = event.pageSize;
     this.loadAuditLog(event.pageIndex, event.pageSize);
+  }
+
+  get totalRestrictions(): number {
+    return this.restrictionDataSource.data.length;
+  }
+
+  get rolesAffectedCount(): number {
+    return new Set(this.restrictionDataSource.data.map(r => r.roleName)).size;
   }
 }
