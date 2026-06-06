@@ -435,9 +435,12 @@ Enterprise-SecureChat/
 ├── dlp-service/src/
 │   ├── main.py         FastAPI: POST /dlp/analyze
 │   ├── analyzer.py     Presidio engines (module-level singletons)
-│   └── custom_recognizers/financial_figures.py
+│   └── custom_recognizers/
+│       ├── financial_figures.py   FINANCIAL_FIGURE — currency-marked amounts
+│       └── og_rules.py            OG_VOLUMES, ANP_PROCESS, RESERVES_VARIATION
 ├── dlp-service/tests/
-│   └── test_financial_recognizer.py
+│   ├── test_financial_recognizer.py
+│   └── test_og_recognizers.py
 ├── frontend/src/app/
 │   ├── core/auth/      keycloak.init.ts, auth.interceptor.ts, auth.guard.ts
 │   ├── core/services/  chat.service.ts, admin.service.ts
