@@ -1,11 +1,13 @@
 import os
 import tempfile
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
@@ -55,6 +57,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Embed Sidecar", lifespan=lifespan)
+
+_crawl_thread: threading.Thread | None = None
 
 
 class EmbedRequest(BaseModel):
@@ -176,3 +180,21 @@ async def ingest(
     )
 
     return IngestResponse(status="indexed", chunks=len(enriched), path=bu_path)
+
+
+@app.post("/crawl", status_code=202)
+def start_crawl() -> JSONResponse:
+    """Trigger the ANP regulatory crawler asynchronously.
+
+    Returns 202 immediately. The crawl runs in a background thread, calling
+    http://localhost:8001/ingest for each discovered document. Designed to be
+    invoked by Cloud Scheduler — protected by Cloud Run IAM (internal ingress).
+    """
+    global _crawl_thread
+    if _crawl_thread is not None and _crawl_thread.is_alive():
+        return JSONResponse(status_code=409, content={"detail": "Crawl already running"})
+
+    from src import crawler  # deferred to avoid startup cost when not crawling
+    _crawl_thread = threading.Thread(target=crawler.run, daemon=True, name="anp-crawler")
+    _crawl_thread.start()
+    return JSONResponse(status_code=202, content={"status": "crawl started"})

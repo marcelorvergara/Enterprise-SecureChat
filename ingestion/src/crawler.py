@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import time
+import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -24,6 +25,12 @@ from bs4 import BeautifulSoup
 ANP_URL = "https://www.gov.br/anp/pt-br/assuntos/exploracao-e-producao-de-oleo-e-gas"
 INGEST_URL = os.getenv("INGEST_URL", "http://ingestion:8001/ingest")
 STATE_FILE = Path(__file__).parent.parent / "data" / ".crawler_state.json"
+
+# When set, state is persisted in GCS instead of the local filesystem.
+# Required on Cloud Run Jobs (ephemeral containers discard local files on exit).
+# The Cloud Run service account needs roles/storage.objectAdmin on this bucket.
+GCS_STATE_BUCKET = os.getenv("GCS_STATE_BUCKET")
+GCS_STATE_KEY = os.getenv("GCS_STATE_KEY", ".crawler_state.json")
 MAX_BYTES = 50 * 1_024 * 1_024  # 50 MB
 DOWNLOAD_TIMEOUT = 30
 RATE_LIMIT_SECONDS = 3
@@ -33,6 +40,28 @@ SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
 # URL keywords that route to the restricted BAR/reserves subject path
 _BAR_KEYWORDS = ("reserva", "recursos", "bar")
 
+# Audience for OIDC token — the ingestion service base URL (no path).
+# e.g. "https://enp-securechat-ingestion-xxx.a.run.app"
+_INGEST_AUDIENCE = "/".join(INGEST_URL.split("/")[:3])
+
+
+def _fetch_identity_token() -> str | None:
+    """Fetch a short-lived OIDC token from the GCP metadata server.
+
+    Only reachable on Cloud Run / GCE. Returns None in local dev so plain
+    unauthenticated HTTP is used instead (Docker Compose still works).
+    """
+    url = (
+        "http://metadata.google.internal/computeMetadata/v1/instance"
+        f"/service-accounts/default/identity?audience={_INGEST_AUDIENCE}"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"Metadata-Flavor": "Google"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.read().decode()
+    except Exception:
+        return None
+
 
 def subject_path_for(url: str) -> str:
     lower = url.lower()
@@ -41,7 +70,23 @@ def subject_path_for(url: str) -> str:
     return "corporate-answers"
 
 
+def _state_location() -> str:
+    if GCS_STATE_BUCKET:
+        return f"gs://{GCS_STATE_BUCKET}/{GCS_STATE_KEY}"
+    return str(STATE_FILE)
+
+
 def _load_state() -> dict:
+    if GCS_STATE_BUCKET:
+        from google.cloud import storage  # noqa: PLC0415
+        try:
+            blob = storage.Client().bucket(GCS_STATE_BUCKET).blob(GCS_STATE_KEY)
+            if blob.exists():
+                return json.loads(blob.download_as_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[crawler] WARN  could not load state from GCS: {exc}")
+        return {}
+
     if STATE_FILE.exists():
         try:
             return json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -51,6 +96,18 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
+    if GCS_STATE_BUCKET:
+        from google.cloud import storage  # noqa: PLC0415
+        try:
+            blob = storage.Client().bucket(GCS_STATE_BUCKET).blob(GCS_STATE_KEY)
+            blob.upload_from_string(
+                json.dumps(state, indent=2),
+                content_type="application/json",
+            )
+        except Exception as exc:
+            print(f"[crawler] ERROR could not save state to GCS: {exc}")
+        return
+
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
@@ -64,9 +121,12 @@ def _fetch_soup(url: str) -> BeautifulSoup | None:
     try:
         resp = requests.get(url, headers=HEADERS, timeout=DOWNLOAD_TIMEOUT)
         resp.raise_for_status()
-        return BeautifulSoup(resp.text, "lxml")
+        return BeautifulSoup(resp.content, "lxml")
     except requests.RequestException as exc:
         print(f"[crawler] ERROR fetching {url}: {exc}")
+        return None
+    except Exception as exc:
+        print(f"[crawler] ERROR parsing {url}: {type(exc).__name__}: {exc}")
         return None
 
 
@@ -133,30 +193,32 @@ def download(url: str) -> bytes | None:
     try:
         resp = requests.get(url, headers=HEADERS, timeout=DOWNLOAD_TIMEOUT, stream=True)
         resp.raise_for_status()
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_content(chunk_size=65_536):
+            total += len(chunk)
+            if total > MAX_BYTES:
+                print(f"[crawler] SKIP  {url} exceeds {MAX_BYTES // 1_048_576} MB limit")
+                return None
+            chunks.append(chunk)
+        return b"".join(chunks)
     except requests.RequestException as exc:
         print(f"[crawler] SKIP  download error for {url}: {exc}")
         return None
-
-    chunks: list[bytes] = []
-    total = 0
-    for chunk in resp.iter_content(chunk_size=65_536):
-        total += len(chunk)
-        if total > MAX_BYTES:
-            print(f"[crawler] SKIP  {url} exceeds {MAX_BYTES // 1_048_576} MB limit")
-            return None
-        chunks.append(chunk)
-    return b"".join(chunks)
 
 
 def post_to_ingest(filename: str, content: bytes, bu_path: str) -> bool:
     """POST file bytes to the /ingest endpoint. Returns True on success."""
     ext = Path(filename).suffix.lower()
     mime = "application/pdf" if ext == ".pdf" else "application/octet-stream"
+    token = _fetch_identity_token()
+    auth_headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         resp = requests.post(
             INGEST_URL,
             files={"file": (filename, content, mime)},
             data={"bu_path": bu_path},
+            headers=auth_headers,
             timeout=300,  # scanned PDFs need Tesseract OCR per page — allow 5 min
         )
         resp.raise_for_status()
@@ -192,57 +254,71 @@ def collect_pages(root_url: str, max_depth: int = 2) -> list[str]:
 
 
 def run() -> None:
+    try:
+        _run()
+    except KeyboardInterrupt:
+        print("[crawler] Interrupted — state was saved up to last completed file")
+    except Exception as exc:
+        import traceback
+        print(f"[crawler] FATAL {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+
+
+def _run() -> None:
     print(f"[crawler] Starting ANP crawl — target: {ANP_URL}")
     state = _load_state()
-
-    pages_to_crawl = collect_pages(ANP_URL, max_depth=2)
-    print(f"[crawler] Crawling {len(pages_to_crawl)} page(s) total (depth ≤ 2)")
-
-    # Deduplicate file URLs across all pages so the same file linked on
-    # multiple pages is only downloaded once.
-    seen_urls: set[str] = set()
-    all_links: list[tuple[str, str]] = []
-    for page_url in pages_to_crawl:
-        for url, filename in discover_links(page_url):
-            if url not in seen_urls:
-                seen_urls.add(url)
-                all_links.append((url, filename))
-        time.sleep(RATE_LIMIT_SECONDS)
-
-    print(f"[crawler] {len(all_links)} unique document(s) found across all pages")
     new_count = updated_count = skipped_count = 0
 
-    for url, filename in all_links:
-        content = download(url)
-        if content is None:
-            skipped_count += 1
+    try:
+        pages_to_crawl = collect_pages(ANP_URL, max_depth=2)
+        print(f"[crawler] Crawling {len(pages_to_crawl)} page(s) total (depth ≤ 2)")
+
+        # Deduplicate file URLs across all pages so the same file linked on
+        # multiple pages is only downloaded once.
+        seen_urls: set[str] = set()
+        all_links: list[tuple[str, str]] = []
+        for page_url in pages_to_crawl:
+            for url, filename in discover_links(page_url):
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    all_links.append((url, filename))
             time.sleep(RATE_LIMIT_SECONDS)
-            continue
 
-        sha = _sha256(content)
-        if state.get(filename) == sha:
-            print(f"[crawler] SKIP  {filename} unchanged")
-            skipped_count += 1
+        print(f"[crawler] {len(all_links)} unique document(s) found across all pages")
+
+        for url, filename in all_links:
+            content = download(url)
+            if content is None:
+                skipped_count += 1
+                time.sleep(RATE_LIMIT_SECONDS)
+                continue
+
+            sha = _sha256(content)
+            if state.get(filename) == sha:
+                print(f"[crawler] SKIP  {filename} unchanged")
+                skipped_count += 1
+                time.sleep(RATE_LIMIT_SECONDS)
+                continue
+
+            is_new = filename not in state
+            bu_path = subject_path_for(url)
+
+            if post_to_ingest(filename, content, bu_path):
+                if is_new:
+                    new_count += 1
+                else:
+                    updated_count += 1
+                state[filename] = sha
+                _save_state(state)  # Persist after each success so a timeout never loses progress
+
             time.sleep(RATE_LIMIT_SECONDS)
-            continue
 
-        is_new = filename not in state
-        bu_path = subject_path_for(url)
-
-        if post_to_ingest(filename, content, bu_path):
-            if is_new:
-                new_count += 1
-            else:
-                updated_count += 1
-            state[filename] = sha
-
-        time.sleep(RATE_LIMIT_SECONDS)
-
-    _save_state(state)
-    print(
-        f"[crawler] Done — {new_count} new, {updated_count} updated, "
-        f"{skipped_count} skipped. State saved to {STATE_FILE}"
-    )
+    finally:
+        _save_state(state)
+        print(
+            f"[crawler] Done — {new_count} new, {updated_count} updated, "
+            f"{skipped_count} skipped. State saved to {_state_location()}"
+        )
 
 
 if __name__ == "__main__":

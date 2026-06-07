@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-RUN npm run build
+RUN npm run build -- --configuration development
 
 # ── Stage 2: Nginx runtime ───────────────────────────────────────────────────
 FROM nginx:1.27-alpine

@@ -50,8 +50,8 @@ keycloak:
   url: ${KEYCLOAK_URL:http://keycloak:8080}
 
 qdrant:
-  url: ${QDRANT_URL:http://qdrant:6333}
-  api-key: ${QDRANT_API_KEY:changeme}
+  url: ${QDRANT_URL}
+  api-key: ${QDRANT_API_KEY}
   collection: ${QDRANT_COLLECTION:enterprise_knowledge}
 
 embed-service:

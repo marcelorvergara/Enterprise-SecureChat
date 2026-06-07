@@ -18,7 +18,7 @@ def build_ancestor_paths(subject_path: str) -> list[str]:
 
 
 def ensure_collection(client: QdrantClient, collection: str) -> None:
-    """Create the Qdrant collection if it does not exist."""
+    """Create the Qdrant collection and required payload indexes if they do not exist."""
     existing = {c.name for c in client.get_collections().collections}
     if collection not in existing:
         client.create_collection(
@@ -27,6 +27,14 @@ def ensure_collection(client: QdrantClient, collection: str) -> None:
                 size=VECTOR_SIZE,
                 distance=models.Distance.COSINE,
             ),
+        )
+    # Payload indexes are required for filter-based deletes and FGA filtering.
+    # create_payload_index is idempotent — safe to call on existing collections.
+    for field in ("doc_id", "ancestor_paths"):
+        client.create_payload_index(
+            collection_name=collection,
+            field_name=field,
+            field_schema=models.PayloadSchemaType.KEYWORD,
         )
 
 
