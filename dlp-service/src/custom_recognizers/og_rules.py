@@ -33,6 +33,7 @@ def build_og_volumes_recognizer() -> PatternRecognizer:
         supported_entity="OG_VOLUMES",
         patterns=_VOLUME_PATTERNS,
         name="OgVolumesRecognizer",
+        supported_language="pt",
     )
 
 
@@ -70,6 +71,7 @@ def build_anp_process_recognizer() -> PatternRecognizer:
         supported_entity="ANP_PROCESS",
         patterns=_ANP_PATTERNS,
         name="AnpProcessRecognizer",
+        supported_language="pt",
     )
 
 
@@ -101,4 +103,5 @@ def build_reserves_variation_recognizer() -> PatternRecognizer:
         supported_entity="RESERVES_VARIATION",
         patterns=_VARIATION_PATTERNS,
         name="ReservesVariationRecognizer",
+        supported_language="pt",
     )

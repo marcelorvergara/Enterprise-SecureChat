@@ -27,4 +27,5 @@ def build_financial_figure_recognizer() -> PatternRecognizer:
         supported_entity="FINANCIAL_FIGURE",
         patterns=_PATTERNS,
         name="FinancialFigureRecognizer",
+        supported_language="pt",
     )

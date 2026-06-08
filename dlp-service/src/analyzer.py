@@ -1,4 +1,11 @@
 from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
+from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_analyzer.predefined_recognizers import (
+    SpacyRecognizer,
+    EmailRecognizer,
+    PhoneRecognizer,
+    CreditCardRecognizer,
+)
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
@@ -19,64 +26,50 @@ _DEFAULT_ENTITIES = [
     "RESERVES_VARIATION",
 ]
 
-# Acronyms and names that spaCy en_core_web_lg misclassifies as PERSON.
-# FGA handles access control at retrieval time, so these are safe to surface.
+# Belt-and-suspenders allowlist for the PT model.
+# pt_core_news_lg correctly classifies Brazilian geological/basin names as LOC/GPE,
+# but multi-word foreign acronyms (FPSO, LNG) can still score as PERSON.
 _PERSON_ALLOWLIST = frozenset({
-    # O&G industry acronyms
     "ANP", "PPSA", "IBAMA", "INPE", "BNDES", "CNPE", "MME",
     "PETROBRAS", "TOTAL", "SHELL", "BP", "REPSOL", "EQUINOR",
     "FPSO", "LNG", "LPG",
-    # Portuguese geological / O&G technical terms that the English NER model
-    # misclassifies as PERSON because of Portuguese noun endings (-ia, -ica, -gia).
-    "ESTRATIGRAFIA", "ESTRATIGRÁFICO", "ESTRATIGRÁFICA",
-    "SEDIMENTOLOGIA", "GEOQUÍMICA", "GEOQUIMIA",
-    "GEOLOGIA", "PETROGRAFIA", "PETROFÍSICA", "PETROFISICA",
-    "SISMOLOGIA", "SISMOGRAFIA", "GEOMECÂNICA", "GEOMECANICA",
-    "LITOLOGIA", "CRONOESTRATIGRAFIA", "BIOESTRATIGRAFIA",
-    "INJEÇÃO", "INJECAO", "INJETOR",
-    "POROSIDADE", "PERMEABILIDADE", "SATURAÇÃO", "SATURACAO",
-    "RESERVATÓRIO", "RESERVATORIO",
-    "SUBSIDÊNCIA", "SUBSIDENCIA",
-    "PALEOGEOGRAFIA", "PALEONTOLOGIA",
-    # O&G regulatory / legal terms that the English NER classifies as PERSON
-    "RESOLUÇÃO", "RESOLUCAO", "RANP",
-    "DESCOMISSIONAMENTO",
-    "GARANTIAS", "GARANTIA",
-    "SUPERINTENDÊNCIA", "SUPERINTENDENCIA",
-    "DESENVOLVIMENTO",
-    "CODIFICAÇÃO", "CODIFICACAO",
-    "CLASSIFICAÇÃO", "CLASSIFICACAO",
-    "PERFURAÇÃO", "PERFURACAO",
-    "EXPLORAÇÃO", "EXPLORACAO",
-    "EXPLOTAÇÃO", "EXPLOTACAO",
-    "PRODUÇÃO", "PRODUCAO",
-    "REGULAÇÃO", "REGULACAO",
-    "CERTIFICAÇÃO", "CERTIFICACAO",
-    "CONCESSÃO", "CONCESSAO",
-    "ABANDONO",
-    "POÇO", "POCO",
-    "OUTORGA", "LICENCIAMENTO",
 })
 
-# Minimum confidence score to accept a PERSON detection.
-# The English spaCy model assigns lower scores (~0.55–0.70) to Portuguese
-# technical terms it does not recognise, while genuine person names score ≥ 0.80.
+# Minimum confidence for a PERSON detection to be kept.
 _MIN_PERSON_SCORE = 0.75
 
-# Engines are module-level singletons — initialized once at startup, never per request.
 _analyzer: AnalyzerEngine | None = None
 _anonymizer: AnonymizerEngine | None = None
 
 
 def init_engines() -> None:
     global _analyzer, _anonymizer
+
+    # Use the Portuguese spaCy model so Brazilian basin/field/formation names are
+    # classified as LOC/GPE by NER, not misidentified as PERSON by en_core_web_lg.
+    nlp_config = {
+        "nlp_engine_name": "spacy",
+        "models": [{"lang_code": "pt", "model_name": "pt_core_news_lg"}],
+    }
+    nlp_engine = NlpEngineProvider(nlp_configuration=nlp_config).create_engine()
+
+    # Build the registry explicitly — load_predefined_recognizers() registers
+    # English-only recognizers that are filtered out when language="pt" is used.
     registry = RecognizerRegistry()
-    registry.load_predefined_recognizers()
+    registry.add_recognizer(SpacyRecognizer(supported_language="pt"))
+    registry.add_recognizer(EmailRecognizer(supported_language="pt"))
+    registry.add_recognizer(PhoneRecognizer(supported_language="pt"))
+    registry.add_recognizer(CreditCardRecognizer(supported_language="pt"))
     registry.add_recognizer(build_financial_figure_recognizer())
     registry.add_recognizer(build_og_volumes_recognizer())
     registry.add_recognizer(build_anp_process_recognizer())
     registry.add_recognizer(build_reserves_variation_recognizer())
-    _analyzer = AnalyzerEngine(registry=registry)
+
+    _analyzer = AnalyzerEngine(
+        nlp_engine=nlp_engine,
+        registry=registry,
+        supported_languages=["pt"],
+    )
     _anonymizer = AnonymizerEngine()
 
 
@@ -90,7 +83,7 @@ def analyze_and_anonymize(
     if not entities:
         return text, 0
 
-    results = _analyzer.analyze(text=text, entities=entities, language="en")
+    results = _analyzer.analyze(text=text, entities=entities, language="pt")
     results = [
         r for r in results
         if not (

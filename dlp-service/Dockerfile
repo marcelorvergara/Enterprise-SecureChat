@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
- && pip install --no-cache-dir https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.1/en_core_web_lg-3.7.1.tar.gz
+ && python -m spacy download pt_core_news_lg
 
 COPY src/ ./src/
 
