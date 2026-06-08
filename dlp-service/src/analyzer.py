@@ -22,10 +22,28 @@ _DEFAULT_ENTITIES = [
 # Acronyms and names that spaCy en_core_web_lg misclassifies as PERSON.
 # FGA handles access control at retrieval time, so these are safe to surface.
 _PERSON_ALLOWLIST = frozenset({
+    # O&G industry acronyms
     "ANP", "PPSA", "IBAMA", "INPE", "BNDES", "CNPE", "MME",
     "PETROBRAS", "TOTAL", "SHELL", "BP", "REPSOL", "EQUINOR",
     "FPSO", "LNG", "LPG",
+    # Portuguese geological / O&G technical terms that the English NER model
+    # misclassifies as PERSON because of Portuguese noun endings (-ia, -ica, -gia).
+    "ESTRATIGRAFIA", "ESTRATIGRÁFICO", "ESTRATIGRÁFICA",
+    "SEDIMENTOLOGIA", "GEOQUÍMICA", "GEOQUIMIA",
+    "GEOLOGIA", "PETROGRAFIA", "PETROFÍSICA", "PETROFISICA",
+    "SISMOLOGIA", "SISMOGRAFIA", "GEOMECÂNICA", "GEOMECANICA",
+    "LITOLOGIA", "CRONOESTRATIGRAFIA", "BIOESTRATIGRAFIA",
+    "INJEÇÃO", "INJECAO", "INJETOR",
+    "POROSIDADE", "PERMEABILIDADE", "SATURAÇÃO", "SATURACAO",
+    "RESERVATÓRIO", "RESERVATORIO",
+    "SUBSIDÊNCIA", "SUBSIDENCIA",
+    "PALEOGEOGRAFIA", "PALEONTOLOGIA",
 })
+
+# Minimum confidence score to accept a PERSON detection.
+# The English spaCy model assigns lower scores (~0.55–0.70) to Portuguese
+# technical terms it does not recognise, while genuine person names score ≥ 0.80.
+_MIN_PERSON_SCORE = 0.75
 
 # Engines are module-level singletons — initialized once at startup, never per request.
 _analyzer: AnalyzerEngine | None = None
@@ -57,7 +75,12 @@ def analyze_and_anonymize(
     results = _analyzer.analyze(text=text, entities=entities, language="en")
     results = [
         r for r in results
-        if not (r.entity_type == "PERSON" and text[r.start:r.end].upper() in _PERSON_ALLOWLIST)
+        if not (
+            r.entity_type == "PERSON" and (
+                text[r.start:r.end].upper() in _PERSON_ALLOWLIST
+                or r.score < _MIN_PERSON_SCORE
+            )
+        )
     ]
 
     if not results:

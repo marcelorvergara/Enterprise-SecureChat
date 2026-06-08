@@ -169,6 +169,8 @@ The crawler (`src/crawler.py`) sends files to `POST /ingest` at runtime; the man
 
 HTML mode (`--mode html` / `--mode all`) uses the same state file but a separate key namespace: `html::{slug}` vs bare filename strings for files. The SHA-256 is computed over the **extracted text** (not raw HTML) so nav-chrome changes on gov.br do not trigger spurious re-ingests. HTML pages are always routed to `corporate-answers` regardless of URL keywords.
 
+File entries in `.crawler_state.json` are stored as `{filename: {"sha": "hex", "size": N}}`. On subsequent runs, the crawler sends a HEAD request to check `Content-Length` before downloading — if the remote size matches `size`, the file is skipped immediately (0.5 s pause) without any download. HTML entries remain plain `{html::slug: sha_str}` strings (no size probe possible since content is extracted from fetched HTML). State entries written by older crawler versions (`{filename: sha_str}` without a size) are migrated transparently on the first run: a HEAD request populates the size without re-downloading.
+
 ### 8. FINANCIAL_FIGURE recognizer only catches amounts with explicit currency markers
 The custom Presidio recognizer (`dlp-service/src/custom_recognizers/financial_figures.py`) matches patterns that include a currency symbol (`$`, `€`, `R$`), a currency code prefix (`USD`, `EUR`, `BRL`), or a magnitude qualifier (`million`, `billion`, `thousand`). A bare number like `450,000` with no currency marker is **not** redacted. This is a known gap. Fix by adding a standalone large-number pattern (e.g. numbers ≥ 1,000 with comma separators in a financial context) or by having the system prompt instruct Claude to always include currency symbols when citing amounts.
 

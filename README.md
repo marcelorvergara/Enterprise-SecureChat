@@ -285,7 +285,7 @@ INGEST_URL=http://localhost:8001/ingest python -m src.crawler --mode all
 
 1. BFS crawl of `gov.br/anp/pt-br/assuntos/exploracao-e-producao-de-oleo-e-gas` up to depth 2 — discovers all sub-pages in the ANP E&P section.
 2. Collects all `.pdf`, `.xlsx`, and `.xls` links across all pages (de-duplicated).
-3. Downloads each file and checks its SHA-256 hash against `ingestion/data/.crawler_state.json` — unchanged files are skipped.
+3. For files already recorded in `ingestion/data/.crawler_state.json`, sends a HEAD request to check `Content-Length`. If the size matches what was stored, the file is skipped immediately — no download needed. If the size differs (or the server omits `Content-Length`), the file is downloaded and its SHA-256 hash is compared before deciding whether to re-ingest.
 4. Routes each file to the correct `subject_path`:
    - URL contains `reserva`, `recursos`, or `bar` → `bar-questions`
    - Everything else → `corporate-answers`
@@ -303,7 +303,7 @@ INGEST_URL=http://localhost:8001/ingest python -m src.crawler --mode all
 
 **Supported content:** `.pdf` (OCR fallback for scanned pages), `.xlsx`, `.xls`, HTML page text (as `.txt`)
 
-**Rate limiting:** 3-second pause between requests to avoid gov.br CDN throttling.
+**Rate limiting:** 3-second pause between full file downloads / page fetches. HEAD-only skip probes use a 0.5-second pause — already-indexed runs complete in minutes rather than hours.
 
 **Stopping mid-run is safe** — documents already ingested before the interruption are live in Qdrant immediately. The state file is written after each successful ingest, so only unrecorded files are retried on the next run.
 

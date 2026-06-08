@@ -38,7 +38,8 @@ GCS_STATE_BUCKET = os.getenv("GCS_STATE_BUCKET")
 GCS_STATE_KEY = os.getenv("GCS_STATE_KEY", ".crawler_state.json")
 MAX_BYTES = 50 * 1_024 * 1_024  # 50 MB
 DOWNLOAD_TIMEOUT = 30
-RATE_LIMIT_SECONDS = 3
+RATE_LIMIT_SECONDS = 3   # between full file downloads / page fetches
+HEAD_RATE_LIMIT_SECONDS = 0.5  # between HEAD-only probes (much lighter)
 HEADERS = {"User-Agent": "Enterprise-SecureChat-Crawler/1.0"}
 SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
 
@@ -243,6 +244,31 @@ def collect_pages(root_url: str, max_depth: int = 2) -> list[str]:
 
 # ── File download / ingest ─────────────────────────────────────────────────────
 
+def _head_size(url: str) -> int | None:
+    """Return Content-Length from a HEAD request, or None if unavailable."""
+    try:
+        resp = requests.head(url, headers=HEADERS, timeout=10, allow_redirects=True)
+        resp.raise_for_status()
+        cl = resp.headers.get("Content-Length")
+        return int(cl) if cl else None
+    except Exception:
+        return None
+
+
+def _file_state(state: dict, filename: str) -> tuple[str | None, int | None]:
+    """Return (stored_sha, stored_size) for a file entry.
+
+    Handles both old format {filename: sha_str} and new format
+    {filename: {"sha": ..., "size": N}}.
+    """
+    entry = state.get(filename)
+    if entry is None:
+        return None, None
+    if isinstance(entry, str):
+        return entry, None
+    return entry.get("sha"), entry.get("size")
+
+
 def download(url: str) -> bytes | None:
     """Download a file, enforcing the size cap. Returns None on error."""
     try:
@@ -422,14 +448,14 @@ def _run(mode: str = "files") -> None:
                 if text is None:
                     print(f"[crawler] SKIP  {page_url} — no extractable content")
                     skipped_count += 1
-                    time.sleep(RATE_LIMIT_SECONDS)
+                    # page was already fetched — no extra sleep needed
                     continue
 
                 sha = _sha256(text.encode())
                 if state.get(state_key) == sha:
                     print(f"[crawler] SKIP  {slug}.txt unchanged")
                     skipped_count += 1
-                    time.sleep(RATE_LIMIT_SECONDS)
+                    # page was already fetched — no extra sleep needed
                     continue
 
                 is_new = state_key not in state
@@ -459,6 +485,28 @@ def _run(mode: str = "files") -> None:
             print(f"[crawler] {len(all_links)} unique document(s) found across all pages")
 
             for url, filename in all_links:
+                stored_sha, stored_size = _file_state(state, filename)
+
+                if stored_sha is not None:
+                    # File seen before — probe size via HEAD to avoid a full download.
+                    remote_size = _head_size(url)
+                    if stored_size is None and remote_size is not None:
+                        # Migrate old-format entry (no size stored yet): trust the HEAD
+                        # result and cache size without re-downloading. The file was
+                        # already verified on the previous run.
+                        state[filename] = {"sha": stored_sha, "size": remote_size}
+                        _save_state(state)
+                        print(f"[crawler] SKIP  {filename} unchanged")
+                        skipped_count += 1
+                        time.sleep(HEAD_RATE_LIMIT_SECONDS)
+                        continue
+                    if remote_size is not None and remote_size == stored_size:
+                        print(f"[crawler] SKIP  {filename} unchanged")
+                        skipped_count += 1
+                        time.sleep(HEAD_RATE_LIMIT_SECONDS)
+                        continue
+                    # Size differs or server omitted Content-Length — fall through to download.
+
                 content = download(url)
                 if content is None:
                     skipped_count += 1
@@ -466,19 +514,22 @@ def _run(mode: str = "files") -> None:
                     continue
 
                 sha = _sha256(content)
-                if state.get(filename) == sha:
+                if sha == stored_sha:
+                    # Content unchanged (size differed but hash matches — update stored size).
+                    state[filename] = {"sha": sha, "size": len(content)}
+                    _save_state(state)
                     print(f"[crawler] SKIP  {filename} unchanged")
                     skipped_count += 1
                     time.sleep(RATE_LIMIT_SECONDS)
                     continue
 
-                is_new = filename not in state
+                is_new = stored_sha is None
                 bu_path = subject_path_for(url)
 
                 if post_to_ingest(filename, content, bu_path):
                     new_count += 1 if is_new else 0
                     updated_count += 0 if is_new else 1
-                    state[filename] = sha
+                    state[filename] = {"sha": sha, "size": len(content)}
                     _save_state(state)
 
                 time.sleep(RATE_LIMIT_SECONDS)

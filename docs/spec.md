@@ -301,13 +301,16 @@ When triggered via the `POST /crawl` API endpoint, the mode is read from the `CR
 The ANP portal runs Plone CMS. Content is extracted from the first matching selector: `#content-core` → `.documentContent` → `#region-content` → `main`. Before extracting text, boilerplate elements (nav, header, footer, share buttons, portlet navigation) are removed in-place. Each page's breadcrumb trail is extracted from `#portal-breadcrumbs` and prepended to the text as `Categoria: X > Y > Z` — this gives every Qdrant chunk its hierarchical site context, improving retrieval precision for regulatory topic queries. Pages with fewer than 80 characters of body text (thin pointer pages, JS-rendered accordions without static content) are skipped. All HTML pages go to `subject_path: corporate-answers` regardless of URL keywords.
 
 **State tracking:** `ingestion/data/.crawler_state.json` stores:
-- File entries: `{filename → SHA-256(bytes)}`
+- File entries: `{filename → {"sha": SHA-256(bytes), "size": Content-Length}}`
 - HTML entries: `{html::{slug} → SHA-256(extracted_text)}`
 
-The separate key namespace prevents collisions between file and HTML entries. For HTML, hashing the extracted text (not raw HTML) means gov.br nav-chrome updates do not trigger spurious re-ingests.
+The separate key namespace prevents collisions between file and HTML entries. For HTML, hashing the extracted text (not raw HTML) means gov.br nav-chrome updates do not trigger spurious re-ingests. File entries written by older crawler versions (`{filename: sha_str}` without a size) are migrated on the first run via a HEAD request — no re-download required.
+
+**Skip optimisation:** For file entries already in state, the crawler sends a HEAD request and compares `Content-Length` against the stored size. A size match skips the file immediately (0.5 s pause). A size mismatch or missing `Content-Length` falls through to a full download and SHA comparison. This reduces a full all-skip pass from hours to minutes. HTML pages do not benefit from HEAD probing — they are fetched in full to extract and hash the editorial text, but unchanged pages do not sleep an extra 3 seconds after the skip decision.
 
 **Operational limits:**
-- 3-second pause between HTTP requests (gov.br CDN rate limiting)
+- 3-second pause between full file downloads and page fetches (gov.br CDN rate limiting)
+- 0.5-second pause between HEAD-only size probes (already-indexed files)
 - 50 MB max per file — oversized files are skipped with a warning
 - 300-second POST timeout to `/ingest` (allows Tesseract OCR on long scanned PDFs)
 
