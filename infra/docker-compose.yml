@@ -118,7 +118,7 @@ services:
     environment:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: enterprise-securechat
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: ${QDRANT_URL}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       QDRANT_COLLECTION: enterprise_knowledge
       EMBED_SERVICE_URL: http://ingestion:8001
