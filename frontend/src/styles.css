@@ -3,10 +3,122 @@
 html, body {
   height: 100%;
   margin: 0;
-  font-family: Roboto, 'Helvetica Neue', sans-serif;
-  background: #f5f5f5;
+  font-family: 'Inter', Roboto, 'Helvetica Neue', sans-serif;
+  background: #070e1a;
+  color: #e2e8f0;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* ── Material dark theme overrides ────────────────────────────────────────── */
+
+/* Sidenav container & content area */
+.mat-drawer-container {
+  background-color: #070e1a !important;
+  color: #e2e8f0;
+}
+
+.mat-drawer {
+  background-color: #080e1e !important;
+}
+
+/* Toolbar primary */
+mat-toolbar[color="primary"],
+.mat-mdc-toolbar.mat-primary {
+  background: linear-gradient(90deg, #080e1e 0%, #0f1d38 100%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Menu panel dark */
+.mat-mdc-menu-panel,
+.mat-menu-panel {
+  background: #111f36 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+.mat-mdc-menu-item .mdc-list-item__primary-text {
+  color: #e2e8f0 !important;
+}
+
+.mat-mdc-menu-item mat-icon,
+.mat-mdc-menu-item .mat-icon {
+  color: #94a3b8 !important;
+}
+
+.mat-mdc-menu-item:hover:not([disabled]) .mdc-list-item__primary-text {
+  color: #f1f5f9 !important;
+}
+
+/* List items inside nav list */
+.mat-mdc-nav-list .mat-mdc-list-item .mdc-list-item__primary-text,
+.mat-mdc-list-item .mdc-list-item__primary-text {
+  color: #94a3b8;
+}
+
+.mat-mdc-nav-list .mat-mdc-list-item .mat-icon,
+.mat-mdc-list-item .mat-icon {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Divider dark */
+mat-divider,
+.mat-divider,
+.mdc-list-divider {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* Snackbar dark */
+.mat-mdc-snack-bar-container .mdc-snackbar__surface {
+  background-color: #1a2d4a !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+}
+
+.mat-mdc-snack-bar-container .mat-mdc-snack-bar-actions .mat-mdc-button {
+  color: #60a5fa !important;
+}
+
+/* Spinner — override primary color to electric blue */
+.mat-mdc-progress-spinner circle {
+  stroke: #3b82f6 !important;
+}
+
+/* Chips dark */
+.mat-mdc-chip {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #94a3b8 !important;
+}
+
+.mat-mdc-chip:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Tooltip dark */
+.mdc-tooltip__surface {
+  background-color: #1a2d4a !important;
+  color: #e2e8f0 !important;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
