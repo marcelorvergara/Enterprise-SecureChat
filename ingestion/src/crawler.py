@@ -244,48 +244,62 @@ def collect_pages(root_url: str, max_depth: int = 2) -> list[str]:
 
 # ── File download / ingest ─────────────────────────────────────────────────────
 
-def _head_size(url: str) -> int | None:
-    """Return Content-Length from a HEAD request, or None if unavailable."""
+def _head_info(url: str) -> tuple[int | None, str | None, str | None]:
+    """Return (Content-Length, ETag, Last-Modified) from a HEAD request.
+
+    Any field not present in the response is returned as None. All three are
+    used as independent skip signals — CDNs that omit Content-Length often
+    still return ETag or Last-Modified, which is sufficient to confirm a file
+    is unchanged without downloading it.
+    """
     try:
         resp = requests.head(url, headers=HEADERS, timeout=10, allow_redirects=True)
         resp.raise_for_status()
         cl = resp.headers.get("Content-Length")
-        return int(cl) if cl else None
+        return int(cl) if cl else None, resp.headers.get("ETag"), resp.headers.get("Last-Modified")
     except Exception:
-        return None
+        return None, None, None
 
 
-def _file_state(state: dict, filename: str) -> tuple[str | None, int | None]:
-    """Return (stored_sha, stored_size) for a file entry.
+def _file_state(state: dict, filename: str) -> tuple[str | None, int | None, str | None, str | None]:
+    """Return (sha, size, etag, last_modified) for a file entry.
 
     Handles both old format {filename: sha_str} and new format
-    {filename: {"sha": ..., "size": N}}.
+    {filename: {"sha": ..., "size": N, "etag": ..., "last_modified": ...}}.
     """
     entry = state.get(filename)
     if entry is None:
-        return None, None
+        return None, None, None, None
     if isinstance(entry, str):
-        return entry, None
-    return entry.get("sha"), entry.get("size")
+        return entry, None, None, None
+    return entry.get("sha"), entry.get("size"), entry.get("etag"), entry.get("last_modified")
 
 
-def download(url: str) -> bytes | None:
-    """Download a file, enforcing the size cap. Returns None on error."""
+def download(url: str) -> tuple[bytes | None, str | None, str | None]:
+    """Download a file, enforcing the size cap.
+
+    Returns (content, etag, last_modified). ETag and Last-Modified are captured
+    from the GET response headers so they can be stored in state and used as
+    skip signals on subsequent runs (CDNs that omit Content-Length in HEAD
+    responses still typically return these cache headers).
+    """
     try:
         resp = requests.get(url, headers=HEADERS, timeout=DOWNLOAD_TIMEOUT, stream=True)
         resp.raise_for_status()
+        etag = resp.headers.get("ETag")
+        last_mod = resp.headers.get("Last-Modified")
         chunks: list[bytes] = []
         total = 0
         for chunk in resp.iter_content(chunk_size=65_536):
             total += len(chunk)
             if total > MAX_BYTES:
                 print(f"[crawler] SKIP  {url} exceeds {MAX_BYTES // 1_048_576} MB limit")
-                return None
+                return None, None, None
             chunks.append(chunk)
-        return b"".join(chunks)
+        return b"".join(chunks), etag, last_mod
     except requests.RequestException as exc:
         print(f"[crawler] SKIP  download error for {url}: {exc}")
-        return None
+        return None, None, None
 
 
 def post_to_ingest(filename: str, content: bytes, bu_path: str) -> bool:
@@ -485,29 +499,41 @@ def _run(mode: str = "files") -> None:
             print(f"[crawler] {len(all_links)} unique document(s) found across all pages")
 
             for url, filename in all_links:
-                stored_sha, stored_size = _file_state(state, filename)
+                stored_sha, stored_size, stored_etag, stored_last_mod = _file_state(state, filename)
 
                 if stored_sha is not None:
-                    # File seen before — probe size via HEAD to avoid a full download.
-                    remote_size = _head_size(url)
-                    if stored_size is None and remote_size is not None:
-                        # Migrate old-format entry (no size stored yet): trust the HEAD
-                        # result and cache size without re-downloading. The file was
-                        # already verified on the previous run.
-                        state[filename] = {"sha": stored_sha, "size": remote_size}
-                        _save_state(state)
-                        print(f"[crawler] SKIP  {filename} unchanged")
-                        skipped_count += 1
-                        time.sleep(HEAD_RATE_LIMIT_SECONDS)
-                        continue
-                    if remote_size is not None and remote_size == stored_size:
-                        print(f"[crawler] SKIP  {filename} unchanged")
-                        skipped_count += 1
-                        time.sleep(HEAD_RATE_LIMIT_SECONDS)
-                        continue
-                    # Size differs or server omitted Content-Length — fall through to download.
+                    # File seen before — probe via HEAD using three independent signals:
+                    # ETag (strongest), Last-Modified, Content-Length.  CDNs that omit
+                    # Content-Length usually still return one of the other two.
+                    remote_size, remote_etag, remote_last_mod = _head_info(url)
 
-                content = download(url)
+                    can_skip = (
+                        (remote_etag is not None and remote_etag == stored_etag)
+                        or (remote_last_mod is not None and remote_last_mod == stored_last_mod)
+                        or (remote_size is not None and remote_size == stored_size)
+                        # Old-format migration: no size/etag/last_mod stored yet — trust HEAD.
+                        or (stored_size is None and stored_etag is None and stored_last_mod is None
+                            and (remote_size is not None or remote_etag is not None or remote_last_mod is not None))
+                    )
+
+                    if can_skip:
+                        # Opportunistically cache any newly available signals for next run.
+                        new_entry: dict = {"sha": stored_sha}
+                        new_entry["size"] = remote_size if remote_size is not None else stored_size
+                        new_entry["etag"] = remote_etag if remote_etag is not None else stored_etag
+                        new_entry["last_modified"] = remote_last_mod if remote_last_mod is not None else stored_last_mod
+                        # Strip None values to keep state compact.
+                        new_entry = {k: v for k, v in new_entry.items() if v is not None}
+                        if isinstance(state.get(filename), str) or state.get(filename) != new_entry:
+                            state[filename] = new_entry
+                            _save_state(state)
+                        print(f"[crawler] SKIP  {filename} unchanged")
+                        skipped_count += 1
+                        time.sleep(HEAD_RATE_LIMIT_SECONDS)
+                        continue
+                    # All signals unavailable or changed — fall through to full download.
+
+                content, dl_etag, dl_last_mod = download(url)
                 if content is None:
                     skipped_count += 1
                     time.sleep(RATE_LIMIT_SECONDS)
@@ -515,8 +541,13 @@ def _run(mode: str = "files") -> None:
 
                 sha = _sha256(content)
                 if sha == stored_sha:
-                    # Content unchanged (size differed but hash matches — update stored size).
-                    state[filename] = {"sha": sha, "size": len(content)}
+                    # Content unchanged despite mismatched signals — update cached metadata.
+                    new_entry = {"sha": sha, "size": len(content)}
+                    if dl_etag:
+                        new_entry["etag"] = dl_etag
+                    if dl_last_mod:
+                        new_entry["last_modified"] = dl_last_mod
+                    state[filename] = new_entry
                     _save_state(state)
                     print(f"[crawler] SKIP  {filename} unchanged")
                     skipped_count += 1
@@ -529,7 +560,12 @@ def _run(mode: str = "files") -> None:
                 if post_to_ingest(filename, content, bu_path):
                     new_count += 1 if is_new else 0
                     updated_count += 0 if is_new else 1
-                    state[filename] = {"sha": sha, "size": len(content)}
+                    new_entry = {"sha": sha, "size": len(content)}
+                    if dl_etag:
+                        new_entry["etag"] = dl_etag
+                    if dl_last_mod:
+                        new_entry["last_modified"] = dl_last_mod
+                    state[filename] = new_entry
                     _save_state(state)
 
                 time.sleep(RATE_LIMIT_SECONDS)
