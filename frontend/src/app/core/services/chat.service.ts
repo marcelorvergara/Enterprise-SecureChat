@@ -26,6 +26,7 @@ export interface ChatResponse {
 export interface Conversation {
   id: string;
   createdAt: string;
+  title?: string;
 }
 
 export interface Message {

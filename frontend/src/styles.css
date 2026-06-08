@@ -98,7 +98,7 @@
   --c-empty-hint:     rgba(255, 255, 255, 0.22);
 
   /* Sidenav & conversations */
-  --c-sidenav-label:  rgba(255, 255, 255, 0.28);
+  --c-sidenav-label:  rgba(255, 255, 255, 0.50);
   --c-sidenav-empty:  rgba(255, 255, 255, 0.22);
   --c-sidenav-icon:   rgba(255, 255, 255, 0.35);
   --c-conv-h:         rgba(255, 255, 255, 0.05);
@@ -228,7 +228,7 @@ body.theme-light {
   --c-empty-hint:     rgba(0, 0, 0, 0.30);
 
   /* Sidenav & conversations */
-  --c-sidenav-label:  rgba(0, 0, 0, 0.40);
+  --c-sidenav-label:  rgba(0, 0, 0, 0.55);
   --c-sidenav-empty:  rgba(0, 0, 0, 0.30);
   --c-sidenav-icon:   rgba(0, 0, 0, 0.40);
   --c-conv-h:         rgba(0, 0, 0, 0.04);

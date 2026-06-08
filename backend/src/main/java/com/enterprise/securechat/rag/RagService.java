@@ -78,6 +78,9 @@ public class RagService {
 
         // ── 2. Conversation — get or create ──────────────────────────────────
         var conversation = conversationService.getOrCreate(request.conversationId(), userSub);
+        if (conversation.getTitle() == null) {
+            conversationService.setTitle(conversation.getId(), request.message());
+        }
 
         // ── 3. Embed the user prompt ─────────────────────────────────────────
         var vector = embedClient.embed(request.message());
@@ -158,6 +161,10 @@ public class RagService {
         Map<String, Object> qdrantFilter = fgaService.buildQdrantFilter(restrictedPaths);
 
         var conversation = conversationService.getOrCreate(request.conversationId(), userSub);
+        if (conversation.getTitle() == null) {
+            var titleText = request.message() + " [" + documentFilename + "]";
+            conversationService.setTitle(conversation.getId(), titleText);
+        }
 
         var vector = embedClient.embed(request.message());
         var hits = qdrantClient.search(vector, qdrantFilter, TOP_K);

@@ -39,7 +39,7 @@ public class ConversationController {
         var views = conversationRepository
                 .findByUserSubOrderByCreatedAtDesc(jwt.getSubject())
                 .stream()
-                .map(c -> new ConversationView(c.getId(), c.getCreatedAt()))
+                .map(c -> new ConversationView(c.getId(), c.getCreatedAt(), c.getTitle()))
                 .toList();
         return ResponseEntity.ok(views);
     }
@@ -76,7 +76,7 @@ public class ConversationController {
         }
     }
 
-    record ConversationView(UUID id, OffsetDateTime createdAt) {}
+    record ConversationView(UUID id, OffsetDateTime createdAt, String title) {}
 
     record MessageView(UUID id, String role, String content, List<SourceCitation> sources, OffsetDateTime createdAt) {}
 }

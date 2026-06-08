@@ -16,6 +16,9 @@ public class Conversation {
     @Column(name = "user_sub", nullable = false)
     private String userSub;
 
+    @Column(name = "title")
+    private String title;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -27,5 +30,7 @@ public class Conversation {
 
     public UUID getId() { return id; }
     public String getUserSub() { return userSub; }
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
 }

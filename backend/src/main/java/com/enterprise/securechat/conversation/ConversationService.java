@@ -60,6 +60,15 @@ public class ConversationService {
     }
 
     @Transactional
+    public void setTitle(UUID conversationId, String firstMessage) {
+        conversationRepository.findById(conversationId).ifPresent(conv -> {
+            var cleaned = firstMessage.replaceAll("[\\r\\n]+", " ").trim();
+            conv.setTitle(cleaned.length() > 72 ? cleaned.substring(0, 72) + "…" : cleaned);
+            conversationRepository.save(conv);
+        });
+    }
+
+    @Transactional
     public void saveUserMessage(UUID conversationId, String content) {
         messageRepository.save(new Message(conversationId, "user", content, null));
     }
