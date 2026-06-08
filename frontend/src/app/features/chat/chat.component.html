@@ -50,9 +50,10 @@
               <span class="sources-label">Sources</span>
               <mat-chip-set>
                 @for (src of msg.sources; track src.sourceFile) {
-                  <mat-chip [matTooltip]="src.subjectPath + ' · score: ' + src.score.toFixed(2)">
+                  <mat-chip [matTooltip]="src.sourceFile + ' · ' + src.subjectPath + ' · score: ' + src.score.toFixed(2)"
+                            matTooltipShowDelay="300">
                     <mat-icon matChipAvatar>description</mat-icon>
-                    {{ src.sourceFile }}
+                    <span class="chip-filename">{{ src.sourceFile }}</span>
                     @if (src.pageNumber) {
                       <span class="chip-detail"> · p.{{ src.pageNumber }}</span>
                     }
