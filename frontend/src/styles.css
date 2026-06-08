@@ -393,6 +393,27 @@ mat-divider,
   color: var(--c-text-2) !important;
 }
 
+/* ── Dialog ─────────────────────────────────────────────────────────────── */
+.mdc-dialog__surface,
+.mat-mdc-dialog-surface {
+  background-color: var(--c-surface) !important;
+  border: 1px solid var(--c-border-2) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.40), 0 4px 16px rgba(0, 0, 0, 0.20) !important;
+}
+
+.mat-mdc-dialog-title,
+.mdc-dialog__title {
+  color: var(--c-text) !important;
+}
+
+.mat-mdc-dialog-content {
+  color: var(--c-text) !important;
+}
+
+.mat-mdc-dialog-actions .mat-mdc-button:not(.primary-btn) {
+  color: var(--c-text-2) !important;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    SCROLLBAR
    ══════════════════════════════════════════════════════════════════════════ */
