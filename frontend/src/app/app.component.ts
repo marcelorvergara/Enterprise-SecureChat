@@ -11,6 +11,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChatService, Conversation } from './core/services/chat.service';
+import { ThemeService } from './core/services/theme.service';
 import { keycloak } from './core/auth/keycloak.init';
 
 @Component({
@@ -35,6 +36,7 @@ import { keycloak } from './core/auth/keycloak.init';
 })
 export class AppComponent implements OnInit, OnDestroy {
   private readonly chatService = inject(ChatService);
+  readonly themeService = inject(ThemeService);
   private refreshSub?: Subscription;
 
   conversations: Conversation[] = [];

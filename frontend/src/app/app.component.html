@@ -40,6 +40,13 @@
         </a>
       }
 
+      <button mat-icon-button
+              class="theme-toggle-btn"
+              (click)="themeService.toggle()"
+              [matTooltip]="themeService.isDark() ? 'Switch to Sage Green' : 'Switch to Dark Petroleum'">
+        <mat-icon>{{ themeService.isDark() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+      </button>
+
       <button mat-button [matMenuTriggerFor]="userMenu" class="user-chip" matTooltip="Account">
         <mat-icon class="user-chip-icon">account_circle</mat-icon>
         <span class="user-chip-info">

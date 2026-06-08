@@ -4,8 +4,9 @@
 
 .app-sidenav {
   width: 256px;
-  background: #080e1e !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: var(--c-sidebar) !important;
+  border-right: 1px solid var(--c-border) !important;
+  transition: background 0.25s ease;
 }
 
 .sidenav-header {
@@ -13,20 +14,20 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 8px 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--c-border);
 }
 
 .sidenav-title {
   font-family: 'Inter', sans-serif;
   font-size: 0.68rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.28);
+  color: var(--c-sidenav-label);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
 .empty-label {
-  color: rgba(255, 255, 255, 0.22);
+  color: var(--c-sidenav-empty);
   font-style: italic;
   font-size: 0.875rem;
 }
@@ -35,7 +36,8 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #070e1a;
+  background: var(--c-bg);
+  transition: background 0.25s ease;
 }
 
 .main-toolbar {
@@ -48,11 +50,11 @@
   font-weight: 600;
   margin-left: 10px;
   letter-spacing: -0.01em;
-  color: #e2e8f0;
+  color: var(--c-toolbar-text);
 }
 
 .title-brand {
-  color: #f59e0b;
+  color: var(--c-brand);
   font-weight: 700;
 }
 
@@ -63,12 +65,23 @@
 .admin-link {
   margin-right: 4px;
   gap: 4px;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--c-admin-link);
 }
 
 .content-area {
   flex: 1;
   overflow: hidden;
+}
+
+/* ── Theme toggle button ──────────────────────────────────────────────── */
+.theme-toggle-btn {
+  color: var(--c-toggle-icon);
+  margin-right: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--c-toggle-h-bg) !important;
 }
 
 /* ── Toolbar user chip ────────────────────────────────────────────────── */
@@ -85,14 +98,14 @@
 }
 
 .user-chip:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: var(--c-chip-hover) !important;
 }
 
 .user-chip-icon {
   font-size: 26px;
   height: 26px;
   width: 26px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--c-toolbar-icon);
   flex-shrink: 0;
 }
 
@@ -107,14 +120,14 @@
   font-family: 'Inter', sans-serif;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #e2e8f0;
+  color: var(--c-toolbar-text);
   line-height: 1.2;
   white-space: nowrap;
 }
 
 .user-chip-role {
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--c-role-text);
   line-height: 1.2;
   white-space: nowrap;
   text-transform: capitalize;
@@ -133,12 +146,12 @@
   font-family: 'Inter', sans-serif;
   font-weight: 600;
   font-size: 0.875rem;
-  color: #e2e8f0;
+  color: var(--c-menu-text);
 }
 
 .user-menu-role {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--c-menu-role);
   text-transform: capitalize;
 }
 
@@ -151,14 +164,14 @@
 }
 
 .conv-item:hover {
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: var(--c-conv-h) !important;
 }
 
 .active-conv {
-  background: rgba(59, 130, 246, 0.1) !important;
-  border-left: 2px solid rgba(59, 130, 246, 0.6);
+  background: var(--c-conv-act-bg) !important;
+  border-left: 2px solid var(--c-conv-act-br);
 }
 
 .active-conv .mdc-list-item__primary-text {
-  color: #60a5fa !important;
+  color: var(--c-conv-act-text) !important;
 }

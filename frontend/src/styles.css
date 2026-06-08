@@ -1,110 +1,387 @@
 @import '@angular/material/prebuilt-themes/indigo-pink.css';
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THEME TOKENS — Dark Petroleum (default)
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Backgrounds */
+  --c-bg:             #070e1a;
+  --c-surface:        #0f1d35;
+  --c-sidebar:        #080e1e;
+  --c-menu-bg:        #111f36;
+  --c-snackbar-bg:    #1a2d4a;
+  --c-toolbar-from:   #080e1e;
+  --c-toolbar-to:     #0f1d38;
+
+  /* Borders & dividers */
+  --c-border:         rgba(255, 255, 255, 0.06);
+  --c-border-2:       rgba(255, 255, 255, 0.12);
+  --c-divider:        rgba(255, 255, 255, 0.07);
+
+  /* Text */
+  --c-text:           #e2e8f0;
+  --c-text-2:         #94a3b8;
+  --c-text-3:         rgba(255, 255, 255, 0.30);
+  --c-text-4:         rgba(255, 255, 255, 0.18);
+
+  /* Accent (electric blue) */
+  --c-accent:         #3b82f6;
+  --c-accent-bg:      rgba(59, 130, 246, 0.08);
+  --c-accent-border:  rgba(59, 130, 246, 0.20);
+  --c-accent-ring:    rgba(59, 130, 246, 0.05);
+  --c-accent-glow-1:  rgba(59, 130, 246, 0.08);
+  --c-accent-glow-2:  rgba(59, 130, 246, 0.32);
+
+  /* Brand highlight (amber) */
+  --c-brand:          #f59e0b;
+
+  /* Message bubbles */
+  --c-user-from:      #1e3fa3;
+  --c-user-to:        #2563eb;
+  --c-user-text:      #f0f6ff;
+  --c-user-shadow:    rgba(37, 99, 235, 0.22);
+  --c-asst-bg:        #0f1d35;
+
+  /* Composer */
+  --c-composer-bg:    rgba(15, 29, 53, 0.88);
+  --c-composer-text:  #e2e8f0;
+  --c-composer-ph:    rgba(255, 255, 255, 0.20);
+
+  /* Send button */
+  --c-send-from:      #1e40af;
+  --c-send-to:        #2563eb;
+  --c-send-hover-f:   #1d3a9e;
+  --c-send-hover-t:   #1d4ed8;
+  --c-send-shadow:    rgba(37, 99, 235, 0.30);
+  --c-send-shadow-h:  rgba(37, 99, 235, 0.45);
+  --c-send-dis-bg:    rgba(255, 255, 255, 0.06);
+  --c-send-dis-text:  rgba(255, 255, 255, 0.18);
+
+  /* Composer icon buttons */
+  --c-icon-btn:       rgba(255, 255, 255, 0.28);
+  --c-icon-btn-h-bg:  rgba(255, 255, 255, 0.06);
+  --c-icon-btn-h:     rgba(255, 255, 255, 0.60);
+  --c-hint:           rgba(255, 255, 255, 0.16);
+
+  /* Attachment strip */
+  --c-attach-bg:      rgba(37, 99, 235, 0.08);
+  --c-attach-border:  rgba(37, 99, 235, 0.12);
+  --c-attach-text:    #60a5fa;
+  --c-attach-rm:      rgba(96, 165, 250, 0.50);
+  --c-attach-rm-h:    rgba(37, 99, 235, 0.10);
+
+  /* Source chips */
+  --c-chip-bg:        rgba(255, 255, 255, 0.08);
+  --c-chip-border:    rgba(255, 255, 255, 0.15);
+  --c-chip-text:      #94a3b8;
+  --c-chip-h-bg:      rgba(255, 255, 255, 0.13);
+
+  /* DLP badge */
+  --c-dlp-bg:         rgba(34, 197, 94, 0.10);
+  --c-dlp-text:       #4ade80;
+  --c-dlp-border:     rgba(34, 197, 94, 0.18);
+
+  /* Code blocks */
+  --c-code-bg:        rgba(255, 255, 255, 0.07);
+  --c-code-text:      #93c5fd;
+  --c-pre-bg:         rgba(0, 0, 0, 0.25);
+  --c-pre-border:     rgba(255, 255, 255, 0.06);
+  --c-quote-border:   rgba(59, 130, 246, 0.35);
+  --c-quote-text:     rgba(255, 255, 255, 0.40);
+
+  /* Empty state */
+  --c-empty-icon:     #3b82f6;
+  --c-empty-ring-bg:  rgba(59, 130, 246, 0.10);
+  --c-empty-ring-br:  rgba(59, 130, 246, 0.18);
+  --c-empty-sub:      rgba(255, 255, 255, 0.28);
+  --c-empty-desc:     rgba(255, 255, 255, 0.40);
+  --c-empty-hint:     rgba(255, 255, 255, 0.22);
+
+  /* Sidenav & conversations */
+  --c-sidenav-label:  rgba(255, 255, 255, 0.28);
+  --c-sidenav-empty:  rgba(255, 255, 255, 0.22);
+  --c-sidenav-icon:   rgba(255, 255, 255, 0.35);
+  --c-conv-h:         rgba(255, 255, 255, 0.05);
+  --c-conv-act-bg:    rgba(59, 130, 246, 0.10);
+  --c-conv-act-br:    rgba(59, 130, 246, 0.60);
+  --c-conv-act-text:  #60a5fa;
+
+  /* Toolbar */
+  --c-toolbar-text:   #e2e8f0;
+  --c-toolbar-icon:   rgba(255, 255, 255, 0.55);
+  --c-chip-hover:     rgba(255, 255, 255, 0.08);
+  --c-role-text:      rgba(255, 255, 255, 0.40);
+  --c-admin-link:     rgba(255, 255, 255, 0.65);
+
+  /* Menus */
+  --c-menu-text:      #e2e8f0;
+  --c-menu-icon:      #94a3b8;
+  --c-menu-role:      rgba(255, 255, 255, 0.35);
+
+  /* Scrollbar */
+  --c-scroll:         rgba(255, 255, 255, 0.10);
+  --c-scroll-h:       rgba(255, 255, 255, 0.18);
+
+  /* Theme toggle */
+  --c-toggle-icon:    rgba(255, 255, 255, 0.70);
+  --c-toggle-h-bg:    rgba(255, 255, 255, 0.08);
+
+  /* Typing indicator */
+  --c-typing-text:    rgba(255, 255, 255, 0.30);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THEME TOKENS — Sage Green (light)
+   ══════════════════════════════════════════════════════════════════════════ */
+body.theme-light {
+  /* Backgrounds */
+  --c-bg:             #f3faf5;
+  --c-surface:        #ffffff;
+  --c-sidebar:        #e6f4ec;
+  --c-menu-bg:        #ffffff;
+  --c-snackbar-bg:    #1a3d2b;
+  --c-toolbar-from:   #0d5a2a;
+  --c-toolbar-to:     #166534;
+
+  /* Borders & dividers */
+  --c-border:         rgba(0, 0, 0, 0.08);
+  --c-border-2:       rgba(0, 0, 0, 0.15);
+  --c-divider:        rgba(0, 0, 0, 0.08);
+
+  /* Text */
+  --c-text:           #0f1f14;
+  --c-text-2:         #3d6b4f;
+  --c-text-3:         rgba(0, 0, 0, 0.45);
+  --c-text-4:         rgba(0, 0, 0, 0.25);
+
+  /* Accent (emerald green) */
+  --c-accent:         #16a34a;
+  --c-accent-bg:      rgba(22, 163, 74, 0.07);
+  --c-accent-border:  rgba(22, 163, 74, 0.20);
+  --c-accent-ring:    rgba(22, 163, 74, 0.06);
+  --c-accent-glow-1:  rgba(22, 163, 74, 0.07);
+  --c-accent-glow-2:  rgba(22, 163, 74, 0.28);
+
+  /* Brand highlight (amber — keeps visual contrast) */
+  --c-brand:          #d97706;
+
+  /* Message bubbles */
+  --c-user-from:      #14532d;
+  --c-user-to:        #16a34a;
+  --c-user-text:      #f0fdf4;
+  --c-user-shadow:    rgba(22, 163, 74, 0.20);
+  --c-asst-bg:        #ffffff;
+
+  /* Composer */
+  --c-composer-bg:    rgba(255, 255, 255, 0.96);
+  --c-composer-text:  #0f1f14;
+  --c-composer-ph:    rgba(0, 0, 0, 0.28);
+
+  /* Send button */
+  --c-send-from:      #14532d;
+  --c-send-to:        #16a34a;
+  --c-send-hover-f:   #0f3d20;
+  --c-send-hover-t:   #15803d;
+  --c-send-shadow:    rgba(22, 163, 74, 0.28);
+  --c-send-shadow-h:  rgba(22, 163, 74, 0.42);
+  --c-send-dis-bg:    rgba(0, 0, 0, 0.08);
+  --c-send-dis-text:  rgba(0, 0, 0, 0.28);
+
+  /* Composer icon buttons */
+  --c-icon-btn:       rgba(0, 0, 0, 0.38);
+  --c-icon-btn-h-bg:  rgba(0, 0, 0, 0.05);
+  --c-icon-btn-h:     rgba(0, 0, 0, 0.65);
+  --c-hint:           rgba(0, 0, 0, 0.22);
+
+  /* Attachment strip */
+  --c-attach-bg:      rgba(22, 163, 74, 0.07);
+  --c-attach-border:  rgba(22, 163, 74, 0.15);
+  --c-attach-text:    #15803d;
+  --c-attach-rm:      rgba(21, 128, 61, 0.45);
+  --c-attach-rm-h:    rgba(22, 163, 74, 0.10);
+
+  /* Source chips */
+  --c-chip-bg:        rgba(22, 163, 74, 0.07);
+  --c-chip-border:    rgba(22, 163, 74, 0.18);
+  --c-chip-text:      #15803d;
+  --c-chip-h-bg:      rgba(22, 163, 74, 0.12);
+
+  /* DLP badge */
+  --c-dlp-bg:         rgba(22, 163, 74, 0.08);
+  --c-dlp-text:       #166534;
+  --c-dlp-border:     rgba(22, 163, 74, 0.20);
+
+  /* Code blocks */
+  --c-code-bg:        rgba(0, 0, 0, 0.05);
+  --c-code-text:      #166534;
+  --c-pre-bg:         rgba(0, 0, 0, 0.04);
+  --c-pre-border:     rgba(0, 0, 0, 0.07);
+  --c-quote-border:   rgba(22, 163, 74, 0.35);
+  --c-quote-text:     rgba(0, 0, 0, 0.45);
+
+  /* Empty state */
+  --c-empty-icon:     #16a34a;
+  --c-empty-ring-bg:  rgba(22, 163, 74, 0.08);
+  --c-empty-ring-br:  rgba(22, 163, 74, 0.20);
+  --c-empty-sub:      rgba(0, 0, 0, 0.35);
+  --c-empty-desc:     rgba(0, 0, 0, 0.50);
+  --c-empty-hint:     rgba(0, 0, 0, 0.30);
+
+  /* Sidenav & conversations */
+  --c-sidenav-label:  rgba(0, 0, 0, 0.40);
+  --c-sidenav-empty:  rgba(0, 0, 0, 0.30);
+  --c-sidenav-icon:   rgba(0, 0, 0, 0.40);
+  --c-conv-h:         rgba(0, 0, 0, 0.04);
+  --c-conv-act-bg:    rgba(22, 163, 74, 0.10);
+  --c-conv-act-br:    rgba(22, 163, 74, 0.50);
+  --c-conv-act-text:  #15803d;
+
+  /* Toolbar */
+  --c-toolbar-text:   #ffffff;
+  --c-toolbar-icon:   rgba(255, 255, 255, 0.75);
+  --c-chip-hover:     rgba(255, 255, 255, 0.10);
+  --c-role-text:      rgba(255, 255, 255, 0.65);
+  --c-admin-link:     rgba(255, 255, 255, 0.85);
+
+  /* Menus */
+  --c-menu-text:      #0f1f14;
+  --c-menu-icon:      #3d6b4f;
+  --c-menu-role:      rgba(0, 0, 0, 0.45);
+
+  /* Scrollbar */
+  --c-scroll:         rgba(0, 0, 0, 0.12);
+  --c-scroll-h:       rgba(0, 0, 0, 0.22);
+
+  /* Theme toggle */
+  --c-toggle-icon:    rgba(255, 255, 255, 0.85);
+  --c-toggle-h-bg:    rgba(255, 255, 255, 0.12);
+
+  /* Typing indicator */
+  --c-typing-text:    rgba(0, 0, 0, 0.38);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BASE
+   ══════════════════════════════════════════════════════════════════════════ */
 html, body {
   height: 100%;
   margin: 0;
   font-family: 'Inter', Roboto, 'Helvetica Neue', sans-serif;
-  background: #070e1a;
-  color: #e2e8f0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  transition: background 0.25s ease, color 0.25s ease;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* ── Material dark theme overrides ────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   MATERIAL COMPONENT OVERRIDES  (token-driven)
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/* Sidenav container & content area */
+/* Sidenav container */
 .mat-drawer-container {
-  background-color: #070e1a !important;
-  color: #e2e8f0;
+  background-color: var(--c-bg) !important;
+  color: var(--c-text);
 }
 
 .mat-drawer {
-  background-color: #080e1e !important;
+  background-color: var(--c-sidebar) !important;
 }
 
-/* Toolbar primary */
+/* Toolbar */
 mat-toolbar[color="primary"],
 .mat-mdc-toolbar.mat-primary {
-  background: linear-gradient(90deg, #080e1e 0%, #0f1d38 100%) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 24px rgba(0, 0, 0, 0.35) !important;
+  background: linear-gradient(90deg, var(--c-toolbar-from) 0%, var(--c-toolbar-to) 100%) !important;
+  border-bottom: 1px solid var(--c-border);
+  box-shadow: 0 1px 0 var(--c-border), 0 4px 24px rgba(0, 0, 0, 0.3) !important;
+  transition: background 0.25s ease !important;
 }
 
-/* Menu panel dark */
+/* Menu panel */
 .mat-mdc-menu-panel,
 .mat-menu-panel {
-  background: #111f36 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  background: var(--c-menu-bg) !important;
+  border: 1px solid var(--c-border-2) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
 .mat-mdc-menu-item .mdc-list-item__primary-text {
-  color: #e2e8f0 !important;
+  color: var(--c-menu-text) !important;
 }
 
 .mat-mdc-menu-item mat-icon,
 .mat-mdc-menu-item .mat-icon {
-  color: #94a3b8 !important;
+  color: var(--c-menu-icon) !important;
 }
 
-.mat-mdc-menu-item:hover:not([disabled]) .mdc-list-item__primary-text {
-  color: #f1f5f9 !important;
-}
-
-/* List items inside nav list */
+/* Nav list text */
 .mat-mdc-nav-list .mat-mdc-list-item .mdc-list-item__primary-text,
 .mat-mdc-list-item .mdc-list-item__primary-text {
-  color: #94a3b8;
+  color: var(--c-text-2);
 }
 
 .mat-mdc-nav-list .mat-mdc-list-item .mat-icon,
 .mat-mdc-list-item .mat-icon {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--c-sidenav-icon);
 }
 
-/* Divider dark */
+/* Divider */
 mat-divider,
 .mat-divider,
 .mdc-list-divider {
-  border-color: rgba(255, 255, 255, 0.07) !important;
+  border-color: var(--c-divider) !important;
 }
 
-/* Snackbar dark */
+/* Snackbar */
 .mat-mdc-snack-bar-container .mdc-snackbar__surface {
-  background-color: #1a2d4a !important;
-  color: #e2e8f0 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+  background-color: var(--c-snackbar-bg) !important;
+  color: var(--c-text) !important;
+  border: 1px solid var(--c-border-2) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35) !important;
 }
 
 .mat-mdc-snack-bar-container .mat-mdc-snack-bar-actions .mat-mdc-button {
-  color: #60a5fa !important;
+  color: var(--c-accent) !important;
 }
 
-/* Spinner — override primary color to electric blue */
+/* Spinner */
 .mat-mdc-progress-spinner circle {
-  stroke: #3b82f6 !important;
+  stroke: var(--c-accent) !important;
 }
 
-/* Chips dark */
+/* Chips */
 .mat-mdc-chip {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  color: #94a3b8 !important;
+  background-color: var(--c-chip-bg) !important;
+  color: var(--c-chip-text) !important;
 }
 
 .mat-mdc-chip:hover {
-  background-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: var(--c-chip-h-bg) !important;
 }
 
-/* Tooltip dark */
+/* MDC chips render their label in this inner element — target it explicitly */
+.mat-mdc-chip .mdc-evolution-chip__text-label,
+.mat-mdc-chip .mdc-evolution-chip__action--primary .mdc-evolution-chip__text-label {
+  color: var(--c-chip-text) !important;
+}
+
+.mat-mdc-chip .mat-icon,
+.mat-mdc-chip .mdc-evolution-chip__icon {
+  color: var(--c-chip-text) !important;
+  opacity: 0.7;
+}
+
+/* Tooltip */
 .mdc-tooltip__surface {
-  background-color: #1a2d4a !important;
-  color: #e2e8f0 !important;
+  background-color: var(--c-menu-bg) !important;
+  color: var(--c-text) !important;
 }
 
-/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   SCROLLBAR
+   ══════════════════════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -115,10 +392,10 @@ mat-divider,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--c-scroll);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--c-scroll-h);
 }
