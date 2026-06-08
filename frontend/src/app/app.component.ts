@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { filter, take } from 'rxjs/operators';
 import { DatePipe } from '@angular/common';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatSidenavModule } from '@angular/material/sidenav';
@@ -58,7 +59,14 @@ export class AppComponent implements OnInit, OnDestroy {
         this.primaryRole = specific[0] ?? roles[0] ?? '';
       }),
     );
-    this.loadConversations();
+    // Wait for Auth0 to confirm authentication before the first API call.
+    // Calling loadConversations() unconditionally on init races against the
+    // Auth0 callback processing — getAccessTokenSilently() throws and the
+    // interceptor silently drops the request (returns EMPTY).
+    this.subs.add(
+      this.auth.isAuthenticated$.pipe(filter(Boolean), take(1))
+        .subscribe(() => this.loadConversations()),
+    );
     this.subs.add(this.chatService.refresh$.subscribe(() => this.loadConversations()));
   }
 
