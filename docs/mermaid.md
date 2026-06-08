@@ -14,7 +14,7 @@ flowchart TD
     Crawler[ANP Crawler<br/>src/crawler.py<br/>BFS depth 2 · SHA-256 state]:::data
 
     subgraph Identity [Identity Layer]
-        Keycloak[Keycloak OIDC]:::identity
+        Auth0[Auth0 OIDC<br/>cloud · free tier]:::identity
         Postgres[(PostgreSQL · Neon)]:::identity
     end
 
@@ -49,9 +49,8 @@ flowchart TD
     ManifestIngest -.->|static BU documents| Ingest
 
     %% --- User auth ---
-    User -->|1. Login| Keycloak
-    Keycloak -->|2. Issues JWT| UI
-    Keycloak -.->|Role data| Postgres
+    User -->|1. Login| Auth0
+    Auth0 -->|2. Issues JWT| UI
 
     %% --- Chat request ---
     User -->|3a. Question| UI

@@ -8,7 +8,7 @@ Enterprise AI chat with RAG (document retrieval), FGA (fine-grained access contr
 Browser → Angular (nginx:4200)
               ↓ /api/ proxy
         Spring Boot (3000)
-         ├─ JWT validation ← Keycloak (8080)  ← Neon (keycloak DB)
+         ├─ JWT validation ← Auth0 (cloud)
          ├─ FGA lookup ──────────────────────── Neon (fga_registry DB)
          ├─ Embed call → Ingestion (8001) /embed
          ├─ Parse call → Ingestion (8001) /parse   ← /api/chat/verify only
@@ -17,7 +17,7 @@ Browser → Angular (nginx:4200)
          └─ DLP scrub → DLP service (8000, internal-only)
 ```
 
-**PostgreSQL runs on [Neon](https://neon.tech), not in Docker.** There is no `postgres` service in docker-compose. The backend connects via `SPRING_DATASOURCE_URL` (JDBC format). Keycloak also uses Neon via `NEON_KEYCLOAK_URL`.
+**PostgreSQL runs on [Neon](https://neon.tech), not in Docker.** There is no `postgres` service in docker-compose. The backend connects via `SPRING_DATASOURCE_URL` (JDBC format). Identity is handled by Auth0 (cloud) — no self-hosted identity container.
 
 ## Tech Stack
 
@@ -25,7 +25,7 @@ Browser → Angular (nginx:4200)
 |-------|-----------|
 | Frontend | Angular 17 (standalone) + Angular Material 17 |
 | Backend | Spring Boot 3.3 / Java 21 |
-| Identity | Keycloak 24 (Docker) |
+| Identity | Auth0 (free tier, cloud) |
 | Vector DB | Qdrant 1.9 (Docker) |
 | App DB | Neon (serverless PostgreSQL) |
 | LLM | Claude `claude-sonnet-4-6` via Anthropic Messages API |
@@ -39,7 +39,7 @@ Browser → Angular (nginx:4200)
 cp infra/.env.example infra/.env
 
 # 2. Apply DB schema once — paste infra/migrations/init.sql into the Neon SQL Editor
-#    (fga_registry database, not the keycloak one)
+#    (fga_registry database)
 
 # 3. Start all services
 cd infra && docker compose up -d
@@ -94,13 +94,13 @@ Enterprise-SecureChat/
 │   ├── health/         HealthController
 │   ├── rag/            RagController, RagService, ParseClient, EmbedClient, QdrantSearchClient,
 │   │                   ClaudeService, DlpClient, dto/
-│   └── security/       RolesExtractor (pulls realm_access.roles from JWT)
+│   └── security/       OgRolesAndGroupExtractor (pulls `https://enpsecurechat.com/roles` from Auth0 JWT)
 ├── dlp-service/src/
 │   ├── main.py         FastAPI: POST /dlp/analyze, GET /health
 │   ├── analyzer.py     Presidio engines (module-level singletons)
 │   └── custom_recognizers/financial_figures.py
 ├── frontend/src/app/
-│   ├── core/auth/      keycloak.init.ts, auth.interceptor.ts, auth.guard.ts
+│   ├── core/auth/      auth.interceptor.ts, auth.guard.ts (Auth0 `@auth0/auth0-angular`)
 │   ├── core/services/  chat.service.ts
 │   ├── features/chat/  ChatComponent (Material shell + custom CSS bubbles)
 │   ├── features/admin/ AdminComponent (stub, guarded by adminGuard)
@@ -127,7 +127,6 @@ Enterprise-SecureChat/
 ├── infra/
 │   ├── docker-compose.yml
 │   ├── migrations/init.sql      Apply once via Neon SQL Editor
-│   ├── keycloak/realm-export.json
 │   └── .env.example
 └── docs/
     ├── plan.md · spec.md · cloud.md · mermaid.md
@@ -177,6 +176,8 @@ The custom Presidio recognizer (`dlp-service/src/custom_recognizers/financial_fi
 ## Key Configuration (application.yml)
 
 ```yaml
+spring.security.oauth2.resourceserver.jwt.issuer-uri:  ${AUTH0_ISSUER_URI:https://dev-ll8lyragj23p2c7l.us.auth0.com/}
+spring.security.oauth2.resourceserver.jwt.audiences:   ${AUTH0_AUDIENCE:api.enpsecurechat.com}
 dlp-service.url:      ${DLP_SERVICE_URL:http://dlp-service:8000}
 embed-service.url:    ${EMBED_SERVICE_URL:http://ingestion:8001}
 qdrant.url:           ${QDRANT_URL:http://qdrant:6333}
@@ -184,14 +185,19 @@ anthropic.model:      ${CLAUDE_MODEL:claude-sonnet-4-6}
 hikari.maximum-pool-size: 5   # Neon free tier limit
 ```
 
-## Keycloak Realm
+## Auth0 Tenant
 
-Realm: `enterprise-securechat` — imported automatically from `infra/keycloak/realm-export.json`.
+Tenant: `dev-ll8lyragj23p2c7l.us.auth0.com` — SPA application + custom API.
 
-| Client | Type | Used by |
-|--------|------|---------|
-| `securechat-frontend` | public (OIDC) | Angular `keycloak-js` |
-| `securechat-backend` | confidential | future service-account calls |
+| Setting | Value |
+|---------|-------|
+| Application type | Single Page Application |
+| Allowed callback / logout / origins | `http://localhost:4200`, `https://enpsecurechat.com` |
+| API identifier (audience) | `api.enpsecurechat.com` |
+| Allow Offline Access | Enabled (issues refresh tokens) |
+| Frontend token caching | `localstorage` + `useRefreshTokens: true` |
+
+Roles injected via **Post-Login Action** (`Actions → Triggers → post-login`) into the `https://enpsecurechat.com/roles` claim on both ID and access tokens. `OgRolesAndGroupExtractor` reads this claim and produces `ROLE_admin`, `ROLE_employee`, etc.
 
 O&G roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coordination`, `reservoir-team`.
 
@@ -204,7 +210,7 @@ O&G roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coor
 | **M2** | ✅ Complete | Python ingestion pipeline: PDF/Excel/image parsers, chunker, embedder, Qdrant writer, `/embed` API |
 | **M3** | ✅ Complete | RAG orchestrator: `RagService`, `ClaudeService`, `QdrantSearchClient`, `EmbedClient`, conversation persistence, SHA-256 audit log |
 | **M4** | ✅ Complete | DLP microservice (FastAPI + Presidio), `DlpClient`, wired into `RagService` after Claude response |
-| **M5** | ✅ Complete | Angular 17 frontend: Keycloak OIDC, JWT interceptor, Material shell, chat UI, SafeMarkdownPipe, admin stub |
+| **M5** | ✅ Complete | Angular 17 frontend: Auth0 OIDC (`@auth0/auth0-angular`), JWT interceptor, Material shell, chat UI, SafeMarkdownPipe, admin stub |
 | **M6** | ✅ Complete | `AdminController` (restriction CRUD, `@PreAuthorize("hasRole('admin')")`), Bucket4j rate limiting (20 req/min per `sub`), security headers, Angular admin panel |
 | **M7** | ✅ Complete | JUnit 5 + Mockito backend tests (`FgaServiceTest`, `RagServiceTest`), pytest ingestion tests (chunker, ancestor_paths, deterministic IDs), pytest DLP tests (FINANCIAL_FIGURE recognizer + redaction), root `README.md` |
 | **M8** | ✅ Complete | Document Verification: ingestion `POST /parse` endpoint (PDF/Excel/image/text), `ParseClient`, `RagService.chatWithDocument()`, `POST /api/chat/verify` (multipart), `ClaudeService` maxTokens overload (2048), Angular file attachment UI with chip strip |
@@ -216,11 +222,11 @@ O&G roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coor
 | Variable | Used by | Notes |
 |----------|---------|-------|
 | `SPRING_DATASOURCE_URL` | backend | JDBC format with `sslmode=require` |
-| `NEON_KEYCLOAK_URL` | Keycloak | JDBC format, separate Neon DB |
+| `AUTH0_ISSUER_URI` | backend | Auth0 tenant URL, e.g. `https://dev-xxx.us.auth0.com/` |
+| `AUTH0_AUDIENCE` | backend | Auth0 API identifier, e.g. `api.enpsecurechat.com` |
 | `ANTHROPIC_API_KEY` | backend | `console.anthropic.com` |
 | `QDRANT_API_KEY` | backend, ingestion | Set in Qdrant via `QDRANT__SERVICE__API_KEY` |
 | `QDRANT_URL` | backend, ingestion | Cloud URL or `http://qdrant:6333` locally |
 | `CRAWLER_MODE` | ingestion | Crawler mode when triggered via `/crawl` API: `files` (default), `html`, or `all` |
-| `KEYCLOAK_ADMIN` / `_PASSWORD` | Keycloak | Console credentials |
 
 All variables are documented in `infra/.env.example`. Never commit `infra/.env`.

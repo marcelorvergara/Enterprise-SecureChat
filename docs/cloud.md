@@ -6,7 +6,7 @@ This guide walks through every external service this project depends on. Complet
 
 ## 1. Neon PostgreSQL
 
-Neon provides serverless PostgreSQL. The project uses **two databases** inside a single Neon project — one for the app and one for Keycloak.
+Neon provides serverless PostgreSQL. The project uses **one database** inside a Neon project.
 
 ### 1.1 Create a Neon Account
 1. Go to [neon.tech](https://neon.tech) and sign up (free tier is sufficient)
@@ -22,22 +22,14 @@ Neon provides serverless PostgreSQL. The project uses **two databases** inside a
    ```
 4. Set this as `NEON_APP_URL` in your `.env` file
 
-### 1.3 Create the Keycloak Database
-1. Create a second database named `keycloak` (same project, same branch)
-2. Copy the connection string and convert it to JDBC format:
-   ```
-   jdbc:postgresql://ep-xxxx-xxxxxx.region.aws.neon.tech/keycloak?sslmode=require&user=YOUR_USER&password=YOUR_PASSWORD
-   ```
-3. Set this as `NEON_KEYCLOAK_URL` in your `.env` file
-
-### 1.4 Apply the Schema
+### 1.3 Apply the Schema
 1. In the Neon dashboard, open the **SQL Editor**
 2. Select the `fga_registry` database
 3. Paste the contents of [infra/migrations/init.sql](../infra/migrations/init.sql) and run it
 4. Verify by running: `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';`
    You should see: `roles`, `role_restrictions`, `restriction_audit_log`, `conversations`, `messages`
 
-### 1.5 Free Tier Limits
+### 1.4 Free Tier Limits
 | Resource | Free Tier Limit |
 |----------|----------------|
 | Storage | 0.5 GB |
@@ -86,42 +78,58 @@ If you hit rate limits during testing, add a small delay between rapid test requ
 
 ---
 
-## 3. Keycloak (Docker — Backed by Neon)
+## 3. Auth0 (Identity — Free Tier Cloud)
 
-Keycloak runs locally in Docker but stores all its data in Neon (the `keycloak` database).
+Auth0 handles authentication. No Docker container or self-hosted service required.
 
-### 3.1 First Start
-After setting `NEON_KEYCLOAK_URL` in `.env`:
-```bash
-docker compose up keycloak
+### 3.1 Create an Account and Tenant
+1. Go to [auth0.com](https://auth0.com) and sign up (free tier is sufficient)
+2. A tenant is created automatically — note the domain (e.g. `dev-xxx.us.auth0.com`)
+
+### 3.2 Create the SPA Application
+1. **Applications → Create Application → Single Page Application**
+2. Name it `securechat-frontend`
+3. Under **Settings**, add to:
+   - **Allowed Callback URLs**: `http://localhost:4200, https://enpsecurechat.com`
+   - **Allowed Logout URLs**: `http://localhost:4200, https://enpsecurechat.com`
+   - **Allowed Web Origins**: `http://localhost:4200, https://enpsecurechat.com`
+4. Note the **Client ID** — set it in the Angular `environment.ts` files
+
+### 3.3 Create the API
+1. **Applications → APIs → Create API**
+2. Name: `EnP SecureChat API`, Identifier (audience): `api.enpsecurechat.com`
+3. Under **Settings**: enable **Allow Offline Access** (required for refresh tokens)
+4. Under **Settings → User Consent**: enable **Allow Skipping User Consent**
+5. Set `AUTH0_AUDIENCE=api.enpsecurechat.com` in your `.env`
+
+### 3.4 Deploy the Post-Login Action (roles in JWT)
+1. **Actions → Triggers → post-login → + → Build from scratch**
+2. Name: `Add Roles to Token`, paste:
+```javascript
+exports.onExecutePostLogin = async (event, api) => {
+  const ns = 'https://enpsecurechat.com/roles';
+  const roles = event.authorization?.roles ?? [];
+  api.idToken.setCustomClaim(ns, roles);
+  api.accessToken.setCustomClaim(ns, roles);
+};
 ```
-Keycloak will create its own schema in the `keycloak` database automatically on first boot. This takes ~60–90 seconds.
+3. **Deploy**, then drag it into the flow and **Apply**
 
-### 3.2 Import the Realm
-The realm configuration is imported automatically from [infra/keycloak/realm-export.json](../infra/keycloak/realm-export.json) via the `--import-realm` flag in docker-compose.
+### 3.5 Create Roles and Test Users
+1. **User Management → Roles → Create Role** — create: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coordination`, `reservoir-team`
+2. **User Management → Users → Create User** — suggested test users:
 
-### 3.3 Create Test Users
-1. Open the Keycloak Admin Console: [http://localhost:8080](http://localhost:8080)
-2. Login with `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` from your `.env`
-3. Select the `enterprise-securechat` realm
-4. Navigate to **Users → Add User**
-5. Create these test users:
+| Email | Role | Purpose |
+|-------|------|---------|
+| `admin-user@enpsecurechat.com` | `admin` | Full access, admin panel |
+| `employee@enpsecurechat.com` | `employee` | General access |
+| `bu-santos@enpsecurechat.com` | `bu-user` | Sees only `bu/santos/*` |
+| `reservoir@enpsecurechat.com` | `reservoir-team` | Blocked from `bar-questions` |
 
-| Username | Role to assign | Group (BU) | Purpose |
-|----------|---------------|------------|---------|
-| `admin-user` | `admin` | — | Full access, admin panel |
-| `employee-one` | `employee` | — | General access, no restrictions |
-| `bu-santos` | `bu-user` | `BU_Santos` | BU Santos user — sees only `bu/santos/*` |
-| `bu-campos` | `bu-user` | `BU_Campos` | BU Campos user — sees only `bu/campos/*` |
-| `reservoir-bob` | `reservoir-team` | `BU_Santos` | Reservoir engineer — blocked from `bar-questions` |
-| `reserves-coord` | `reserves-coordination` | — | Cross-BU access, sees `bar-questions`; no upload |
+3. For each user: go to **Users → [user] → Roles** and assign their role
 
-6. For each user, set a password under **Credentials** and assign their role under **Role Mappings → Realm Roles**
-
-### 3.4 Admin Console URL
-- Local: [http://localhost:8080](http://localhost:8080)
-- Realm: `enterprise-securechat`
-- OIDC discovery: [http://localhost:8080/realms/enterprise-securechat/.well-known/openid-configuration](http://localhost:8080/realms/enterprise-securechat/.well-known/openid-configuration)
+### 3.6 OIDC Discovery URL
+`https://<your-tenant>.us.auth0.com/.well-known/openid-configuration`
 
 ---
 
@@ -150,12 +158,10 @@ Full list of variables for your `.env` file (see [infra/.env.example](../infra/.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NEON_APP_URL` | Yes | PostgreSQL JDBC/connection URL for app data (Neon `fga_registry` DB) |
-| `NEON_KEYCLOAK_URL` | Yes | JDBC URL for Keycloak's backing database (Neon `keycloak` DB) |
-| `KEYCLOAK_ADMIN` | Yes | Keycloak admin username (default: `admin`) |
-| `KEYCLOAK_ADMIN_PASSWORD` | Yes | Keycloak admin password |
+| `AUTH0_ISSUER_URI` | Yes | Auth0 tenant URL, e.g. `https://dev-xxx.us.auth0.com/` |
+| `AUTH0_AUDIENCE` | Yes | Auth0 API identifier, e.g. `api.enpsecurechat.com` |
 | `QDRANT_API_KEY` | Yes | API key for local Qdrant instance |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude access |
-| `APP_JWT_SECRET` | Yes | Internal secret for any app-level token signing |
 
 ---
 
@@ -164,23 +170,17 @@ Full list of variables for your `.env` file (see [infra/.env.example](../infra/.
 When bringing up the full stack for the first time:
 
 ```bash
-# Step 1 — Start infrastructure services
-docker compose up keycloak qdrant dlp-service -d
+# Step 1 — Start infrastructure services (no Keycloak — Auth0 is cloud)
+docker compose up qdrant dlp-service -d
 
-# Step 2 — Wait for Keycloak to finish importing realm (~90s)
-docker compose logs -f keycloak   # look for "Listening on: http://0.0.0.0:8080"
-
-# Step 3 — Ingest documents
+# Step 2 — Ingest documents
 docker compose run --rm ingestion python -m src.main --manifest manifests/og-manifest.yaml
 
-# Step 4 — Start the ingestion embed sidecar (keeps model warm for backend)
-docker compose --profile ingestion up ingestion -d
-
-# Step 5 — Start backend and frontend
+# Step 3 — Start backend and frontend
 docker compose up backend frontend -d
 
-# Step 6 — Open the app
+# Step 4 — Open the app
 # http://localhost:4200
 ```
 
-For subsequent starts (after first setup): `docker compose up -d` (and `docker compose --profile ingestion up ingestion -d` to keep the embed service warm).
+For subsequent starts: `docker compose up -d`.

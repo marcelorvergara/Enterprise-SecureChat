@@ -10,9 +10,11 @@ import { MatListModule } from '@angular/material/list';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { AuthService } from '@auth0/auth0-angular';
 import { ChatService, Conversation } from './core/services/chat.service';
 import { ThemeService } from './core/services/theme.service';
-import { keycloak } from './core/auth/keycloak.init';
+
+const ROLES_CLAIM = 'https://enpsecurechat.com/roles';
 
 @Component({
   selector: 'app-root',
@@ -36,33 +38,32 @@ import { keycloak } from './core/auth/keycloak.init';
 })
 export class AppComponent implements OnInit, OnDestroy {
   private readonly chatService = inject(ChatService);
+  private readonly auth = inject(AuthService);
   readonly themeService = inject(ThemeService);
-  private refreshSub?: Subscription;
+  private readonly subs = new Subscription();
 
   conversations: Conversation[] = [];
-  username = keycloak.tokenParsed?.['preferred_username'] ?? 'User';
-
-  get primaryRole(): string {
-    const SYSTEM = new Set(['offline_access', 'uma_authorization']);
-    const roles = (keycloak.realmAccess?.roles ?? [])
-      .filter(r => !SYSTEM.has(r) && !r.startsWith('default-roles-'));
-    const specific = roles.filter(r => r !== 'employee');
-    return specific[0] ?? roles[0] ?? '';
-  }
+  username = 'User';
+  isAdmin = false;
+  primaryRole = '';
 
   ngOnInit(): void {
-    console.log('tokenParsed', keycloak.tokenParsed);
-    this.username =
-      keycloak.tokenParsed?.['preferred_username'] ??
-      keycloak.tokenParsed?.['name'] ??
-      keycloak.tokenParsed?.['email'] ??
-      'User';
+    this.subs.add(
+      this.auth.user$.subscribe(user => {
+        if (!user) return;
+        this.username = user['nickname'] ?? user['name'] ?? user['email'] ?? 'User';
+        const roles: string[] = user[ROLES_CLAIM] ?? [];
+        this.isAdmin = roles.includes('admin');
+        const specific = roles.filter(r => r !== 'employee');
+        this.primaryRole = specific[0] ?? roles[0] ?? '';
+      }),
+    );
     this.loadConversations();
-    this.refreshSub = this.chatService.refresh$.subscribe(() => this.loadConversations());
+    this.subs.add(this.chatService.refresh$.subscribe(() => this.loadConversations()));
   }
 
   ngOnDestroy(): void {
-    this.refreshSub?.unsubscribe();
+    this.subs.unsubscribe();
   }
 
   private loadConversations(): void {
@@ -72,16 +73,7 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  get isAdmin(): boolean {
-    return keycloak.realmAccess?.roles?.includes('admin') ?? false;
-  }
-
   logout(): void {
-    const base = (keycloak.authServerUrl ?? 'http://localhost:8080').replace(/\/$/, '');
-    const redirectUri = encodeURIComponent(window.location.origin + '/');
-    keycloak.clearToken();
-    window.location.href =
-      `${base}/realms/enterprise-securechat/protocol/openid-connect/logout` +
-      `?client_id=securechat-frontend&post_logout_redirect_uri=${redirectUri}`;
+    this.auth.logout({ logoutParams: { returnTo: window.location.origin } });
   }
 }

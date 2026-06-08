@@ -1,9 +1,6 @@
-// Keycloak URL is the browser-accessible address (localhost in Docker Compose dev setup).
-// In production, replace with your actual Keycloak hostname.
 export const environment = {
   production: false,
-  keycloakUrl: 'http://localhost:8080',
-  keycloakRealm: 'enterprise-securechat',
-  keycloakClientId: 'securechat-frontend',
-  apiUrl: 'http://localhost:3000/api',
+  auth0Domain: 'dev-ll8lyragj23p2c7l.us.auth0.com',
+  auth0ClientId: '915VrzDeJpQbyjPHeOYfQONUFR0a5F08',
+  auth0Audience: 'api.enpsecurechat.com',
 };

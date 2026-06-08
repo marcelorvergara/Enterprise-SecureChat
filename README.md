@@ -28,7 +28,7 @@ flowchart TD
     Crawler[ANP Crawler<br/>src/crawler.py<br/>BFS depth 2 · SHA-256 state]:::data
 
     subgraph Identity [Identity Layer]
-        Keycloak[Keycloak OIDC]:::identity
+        Auth0[Auth0 OIDC<br/>cloud · free tier]:::identity
         Postgres[(PostgreSQL · Neon)]:::identity
     end
 
@@ -61,9 +61,8 @@ flowchart TD
     ManifestIngest([One-shot manifest<br/>src/main.py]):::data
     ManifestIngest -.->|static BU documents| Ingest
 
-    User -->|1. Login| Keycloak
-    Keycloak -->|2. Issues JWT| UI
-    Keycloak -.->|Role data| Postgres
+    User -->|1. Login| Auth0
+    Auth0 -->|2. Issues JWT| UI
 
     User -->|3a. Question| UI
     User -->|3b. Question + File| UI
@@ -101,7 +100,7 @@ flowchart TD
 |-------|-----------|
 | Frontend | Angular 17 (standalone) + Angular Material 17 |
 | Backend | Spring Boot 3.3 / Java 21 |
-| Identity | Keycloak 24 (Docker) |
+| Identity | Auth0 (free tier, cloud) |
 | Vector DB | Qdrant 1.9 (Docker) |
 | App DB | Neon (serverless PostgreSQL) |
 | LLM | Claude `claude-sonnet-4-6` via Anthropic Messages API |
@@ -115,10 +114,11 @@ flowchart TD
 
 | Requirement | Notes |
 |-------------|-------|
-| Docker Desktop | Runs Keycloak, Qdrant, backend, frontend, ingestion, DLP |
+| Docker Desktop | Runs Qdrant, backend, frontend, ingestion, DLP |
 | Java 21 | Only needed for local backend development outside Docker |
 | Python 3.11 | Only needed for local ingestion/DLP development outside Docker |
-| [Neon account](https://neon.tech) | Free tier — create two databases: `fga_registry` and `keycloak` |
+| [Neon account](https://neon.tech) | Free tier — create one database: `fga_registry` |
+| [Auth0 account](https://auth0.com) | Free tier — SPA application + custom API |
 | Anthropic API key | Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys) |
 
 ---
@@ -137,11 +137,10 @@ Edit `infra/.env` and fill in:
 
 ```env
 SPRING_DATASOURCE_URL=jdbc:postgresql://ep-xxxx.region.aws.neon.tech/fga_registry?sslmode=require&user=xxx&password=xxx
-NEON_KEYCLOAK_URL=jdbc:postgresql://ep-xxxx.region.aws.neon.tech/keycloak?sslmode=require&user=xxx&password=xxx
+AUTH0_ISSUER_URI=https://dev-xxx.us.auth0.com/
+AUTH0_AUDIENCE=api.enpsecurechat.com
 ANTHROPIC_API_KEY=sk-ant-api03-...
 QDRANT_API_KEY=your-local-qdrant-key
-KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=changeme
 ```
 
 ### 2. Apply the database schema
@@ -159,19 +158,18 @@ Services come up in this order (Docker healthchecks handle dependencies):
 
 | Service | URL | Notes |
 |---------|-----|-------|
-| Keycloak | http://localhost:8080 | OIDC issuer |
 | Qdrant | http://localhost:6333 | Vector DB + dashboard |
 | DLP | internal only | `dlp-service:8000` on backend network |
 | Backend | http://localhost:3000 | Spring Boot |
 | Frontend | http://localhost:4200 | Angular (served via nginx) |
 
-### 4. Create users in Keycloak
+### 4. Create users in Auth0
 
-1. Navigate to http://localhost:8080 → log in as admin
-2. Select realm **enterprise-securechat**
-3. Go to **Users → Add user** and create test users (e.g., `alice`, `bob`)
-4. Under each user's **Credentials** tab, set a password (disable "Temporary")
-5. Under **Role mappings**, assign realm roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coordination`, or `reservoir-team`
+1. Go to your [Auth0 dashboard](https://manage.auth0.com) → **User Management → Users → Create User**
+2. Create test users (e.g. `admin-user@enpsecurechat.com`, `employee@enpsecurechat.com`)
+3. Go to **User Management → Roles**, create the O&G roles (`admin`, `employee`, `bu-user`, etc.)
+4. Assign roles to each user via **User Management → Users → [user] → Roles**
+5. Ensure the **Post-Login Action** is deployed to inject roles into the `https://enpsecurechat.com/roles` JWT claim (see `docs/cloud.md`)
 
 ### 5. Index documents
 
@@ -186,7 +184,7 @@ The O&G manifest indexes reserves documents under `bu/<name>/reserves` and regul
 
 ### 6. Start chatting
 
-Open http://localhost:4200 — you will be redirected to Keycloak login. After authenticating, the chat interface is immediately available.
+Open http://localhost:4200 — you will be redirected to the Auth0 Universal Login. After authenticating, the chat interface is immediately available.
 
 ---
 
@@ -453,7 +451,7 @@ Enterprise-SecureChat/
 │   ├── health/         HealthController
 │   ├── rag/            RagService, ClaudeService, ParseClient, EmbedClient,
 │   │                   QdrantSearchClient, DlpClient, dto/
-│   └── security/       RolesExtractor (Keycloak realm_access.roles → ROLE_)
+│   └── security/       OgRolesAndGroupExtractor (Auth0 roles claim → ROLE_)
 ├── backend/src/test/java/com/enterprise/securechat/
 │   ├── fga/            FgaServiceTest (filter structure, hierarchy)
 │   └── rag/            RagServiceTest (orchestration, DLP wiring, FGA flag)
@@ -467,7 +465,7 @@ Enterprise-SecureChat/
 │   ├── test_financial_recognizer.py
 │   └── test_og_recognizers.py
 ├── frontend/src/app/
-│   ├── core/auth/      keycloak.init.ts, auth.interceptor.ts, auth.guard.ts
+│   ├── core/auth/      auth.interceptor.ts, auth.guard.ts (Auth0)
 │   ├── core/services/  chat.service.ts, admin.service.ts
 │   ├── features/chat/  ChatComponent
 │   ├── features/admin/ AdminComponent (restriction matrix, add form, audit log)
@@ -485,7 +483,6 @@ Enterprise-SecureChat/
 ├── infra/
 │   ├── docker-compose.yml
 │   ├── migrations/init.sql
-│   ├── keycloak/realm-export.json
 │   └── .env.example
 └── docs/
     ├── plan.md · spec.md · cloud.md · mermaid.md
@@ -498,19 +495,18 @@ Enterprise-SecureChat/
 | Variable | Service | Description |
 |----------|---------|-------------|
 | `SPRING_DATASOURCE_URL` | backend | JDBC URL for `fga_registry` Neon DB |
-| `NEON_KEYCLOAK_URL` | keycloak | JDBC URL for `keycloak` Neon DB |
+| `AUTH0_ISSUER_URI` | backend | Auth0 tenant URL, e.g. `https://dev-xxx.us.auth0.com/` |
+| `AUTH0_AUDIENCE` | backend | Auth0 API identifier, e.g. `api.enpsecurechat.com` |
 | `ANTHROPIC_API_KEY` | backend | Anthropic API key |
 | `QDRANT_API_KEY` | backend, ingestion | Qdrant auth key |
 | `QDRANT_URL` | backend, ingestion | Default: `http://qdrant:6333` |
-| `KEYCLOAK_ADMIN` | keycloak | Admin console username |
-| `KEYCLOAK_ADMIN_PASSWORD` | keycloak | Admin console password |
 | `CRAWLER_MODE` | ingestion | Crawler mode when triggered via `/crawl` API: `files` (default), `html`, or `all` |
 
 All variables are documented in `infra/.env.example`.
 
 ---
 
-## Default Keycloak Roles
+## Roles
 
 | Role | Intended for |
 |------|-------------|

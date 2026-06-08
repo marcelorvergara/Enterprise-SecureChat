@@ -36,18 +36,17 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # ── Keycloak JWT resource server ─────────────────────────────────────────────
-  # Spring Security fetches Keycloak's public keys from this JWKS endpoint to
-  # validate every incoming Bearer token — no shared secret needed.
+  # ── Auth0 JWT resource server ────────────────────────────────────────────────
+  # Spring Security auto-discovers the JWKS endpoint from the issuer's
+  # OpenID Connect discovery document and validates iss + aud on every token.
   security:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: ${KEYCLOAK_URL:http://keycloak:8080}/realms/enterprise-securechat/protocol/openid-connect/certs
+          issuer-uri: ${AUTH0_ISSUER_URI:https://dev-ll8lyragj23p2c7l.us.auth0.com/}
+          audiences: ${AUTH0_AUDIENCE:api.enpsecurechat.com}
 
 # ── External service URLs ────────────────────────────────────────────────────
-keycloak:
-  url: ${KEYCLOAK_URL:http://keycloak:8080}
 
 qdrant:
   url: ${QDRANT_URL}

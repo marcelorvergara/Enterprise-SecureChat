@@ -17,7 +17,7 @@ Architecture diagram: see [mermaid.txt](mermaid.txt).
 - Answer questions using company knowledge stored in a vector database
 - Enforce hierarchical role-based document restrictions at the database retrieval layer
 - Redact sensitive data from answers regardless of which documents were retrieved
-- Authenticate users via an enterprise identity provider (Keycloak / OIDC)
+- Authenticate users via an OIDC identity provider (Auth0)
 - Provide an admin panel to manage role restrictions without redeploying
 
 **Non-Goals (Phase 1)**
@@ -32,9 +32,9 @@ Architecture diagram: see [mermaid.txt](mermaid.txt).
 
 | Component | Technology | Responsibility |
 |-----------|-----------|----------------|
-| **Frontend** | Angular 17+ | Chat UI, Keycloak OIDC login, source citations, admin panel |
+| **Frontend** | Angular 17+ | Chat UI, Auth0 OIDC login (`@auth0/auth0-angular`), source citations, admin panel |
 | **Backend** | Spring Boot 3.x (Java 21) | JWT validation, FGA lookup, RAG orchestration, Claude API, DLP proxy |
-| **Identity** | Keycloak 24 (Docker) | OIDC token issuer, user/role management, AD emulation |
+| **Identity** | Auth0 (free tier, cloud) | OIDC token issuer, user/role management |
 | **FGA Registry** | Neon PostgreSQL | Stores role → subject_path restriction mappings and audit logs |
 | **Vector DB** | Qdrant 1.9 (Docker) | Stores document chunk embeddings with FGA metadata for filtered search |
 | **Ingestion** | Python 3.11 | Parses PDFs/Excel/images/text, chunks, embeds, upserts into Qdrant with FGA metadata; exposes `/parse` for ephemeral document text extraction and `/ingest` for crawler-driven indexing; `crawler.py` auto-discovers ANP regulatory documents and can extract HTML page text (`--mode html/all`) |
@@ -112,7 +112,7 @@ No auth required.
 ```
 
 #### `POST /api/chat`
-Auth: Bearer JWT (Keycloak). **Blocking — not streaming (see §8).**
+Auth: Bearer JWT (Auth0). **Blocking — not streaming (see §8).**
 ```json
 // Request
 { "prompt": "What are the Q3 drilling plans?", "conversation_id": "uuid | null" }
@@ -131,7 +131,7 @@ Auth: Bearer JWT (Keycloak). **Blocking — not streaming (see §8).**
 ```
 
 #### `POST /api/chat/verify`
-Auth: Bearer JWT (Keycloak). **Multipart form-data.** Accepts a file alongside a question and cross-references it against the knowledge base.
+Auth: Bearer JWT (Auth0). **Multipart form-data.** Accepts a file alongside a question and cross-references it against the knowledge base.
 ```
 // Request (multipart/form-data)
 message:        "Is the IP address in this runbook correct?"
@@ -211,10 +211,9 @@ bu_path: "corporate-answers"   // subject_path to assign to all chunks
 ## 6. Security Model
 
 ### 6.1 Authentication
-Keycloak issues JWTs (OIDC). Spring Boot validates tokens against Keycloak's JWKS endpoint:
-`http://keycloak:8080/realms/enterprise-securechat/protocol/openid-connect/certs`
+Auth0 issues JWTs (OIDC). Spring Boot validates tokens via the issuer's OpenID Connect discovery document (`/.well-known/openid-configuration`) and enforces the `api.enpsecurechat.com` audience claim.
 
-Role claims are read from `realm_access.roles` in the JWT payload.
+Role claims are read from `https://enpsecurechat.com/roles` in the JWT payload, injected by a Post-Login Action.
 
 ### 6.2 FGA — Hierarchical Document Restriction
 

@@ -18,10 +18,13 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { CdkTextareaAutosize, TextFieldModule } from '@angular/cdk/text-field';
+import { AuthService } from '@auth0/auth0-angular';
 import { ChatService, Message, SourceCitation } from '../../core/services/chat.service';
 import { SafeMarkdownPipe } from '../../shared/pipes/safe-markdown.pipe';
 import { BuUploadModalComponent } from './bu-upload-modal.component';
-import { keycloak } from '../../core/auth/keycloak.init';
+
+const ROLES_CLAIM = 'https://enpsecurechat.com/roles';
+const INGEST_ROLES = new Set(['bu-user', 'reserves-management', 'reserves-coordination']);
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -55,16 +58,15 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
 
   private readonly chatService = inject(ChatService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
   private readonly snackBar = inject(MatSnackBar);
   private routeSub?: Subscription;
+  private authSub?: Subscription;
 
-  get canIngestDocuments(): boolean {
-    const roles = keycloak.realmAccess?.roles ?? [];
-    return roles.some(r => ['bu-user', 'reserves-management', 'reserves-coordination'].includes(r));
-  }
+  canIngestDocuments = false;
 
   openBuUpload(): void {
     this.dialog.open(BuUploadModalComponent, { width: '420px' });
@@ -79,6 +81,10 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   private pendingScroll = false;
 
   ngOnInit(): void {
+    this.authSub = this.auth.user$.subscribe(user => {
+      const roles: string[] = user?.[ROLES_CLAIM] ?? [];
+      this.canIngestDocuments = roles.some(r => INGEST_ROLES.has(r));
+    });
     this.routeSub = this.route.paramMap.subscribe(params => {
       const id = params.get('id') ?? undefined;
       this.reset();
@@ -91,6 +97,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
+    this.authSub?.unsubscribe();
   }
 
   private reset(): void {
