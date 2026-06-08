@@ -12,6 +12,7 @@ Browser → Angular (nginx:4200)
          ├─ FGA lookup ──────────────────────── Neon (fga_registry DB)
          ├─ Embed call → Ingestion (8001) /embed
          ├─ Parse call → Ingestion (8001) /parse   ← /api/chat/verify only
+         ├─ Ingest call → Ingestion (8001) /ingest  ← /api/documents/ingest only
          ├─ Qdrant search (must_not filter) ── Qdrant (6333)
          ├─ Claude API ──────────────────────── Anthropic cloud
          └─ DLP scrub → DLP service (8000, internal-only)
@@ -92,8 +93,8 @@ Enterprise-SecureChat/
 │   ├── conversation/   Conversation + Message entities, ConversationService/Controller
 │   ├── fga/            FgaService — restriction lookup + Qdrant filter builder
 │   ├── health/         HealthController
-│   ├── rag/            RagController, RagService, ParseClient, EmbedClient, QdrantSearchClient,
-│   │                   ClaudeService, DlpClient, dto/
+│   ├── rag/            RagController, RagService, ParseClient, EmbedClient, IngestClient,
+│   │                   DocumentController, QdrantSearchClient, ClaudeService, DlpClient, dto/
 │   └── security/       OgRolesAndGroupExtractor (pulls `https://enpsecurechat.com/roles` from Auth0 JWT)
 ├── dlp-service/src/
 │   ├── main.py         FastAPI: POST /dlp/analyze, GET /health
@@ -102,7 +103,7 @@ Enterprise-SecureChat/
 ├── frontend/src/app/
 │   ├── core/auth/      auth.interceptor.ts, auth.guard.ts (Auth0 `@auth0/auth0-angular`)
 │   ├── core/services/  chat.service.ts
-│   ├── features/chat/  ChatComponent (Material shell + custom CSS bubbles)
+│   ├── features/chat/  ChatComponent (Material shell + custom CSS bubbles), BuUploadModalComponent
 │   ├── features/admin/ AdminComponent (stub, guarded by adminGuard)
 │   └── shared/pipes/   SafeMarkdownPipe (marked → DOMPurify → SafeHtml)
 ├── ingestion/
@@ -163,6 +164,9 @@ The `ingestion` service in docker-compose has **no profile** so it starts with `
 ### 10. `ClaudeService.complete()` — `maxTokens` overload
 The no-arg overload defaults to 1024 tokens (sufficient for regular chat). `/api/chat/verify` calls the two-arg overload with `maxTokens=2048` so compliance comparison reports are not truncated. Do not increase the default — 1024 is intentional for chat responses.
 
+### 12. `POST /api/documents/ingest` — BU path is always server-side derived
+`DocumentController.extractBuPath()` maps the caller's `GROUP_BU_xxx` authority to `bu/{name}/reserves`. The client never sends a `bu_path` parameter. Do not add a `bu_path` request parameter — a user could index a document under another BU's subject path and bypass the FGA model.
+
 ### 11. Crawler and manifest are two independent ingestion paths — do not merge
 The crawler (`src/crawler.py`) sends files to `POST /ingest` at runtime; the manifest pipeline (`src/main.py`) reads a YAML file at startup. Both share the same `/ingest` endpoint and the same `delete_by_doc_id` + upsert idempotency guarantee (`doc_id = uuid5(NAMESPACE_URL, f"{bu_path}/{filename}")`). Documents that arrive from the crawler are tracked in `data/.crawler_state.json` (SHA-256 hash per filename). If this file is deleted, the next crawler run re-ingests everything from scratch — safe but slow. Never index crawler-managed files in the manifest or vice versa; the two paths can produce duplicate vectors if the same file is given different `bu_path` values by each path.
 
@@ -216,6 +220,7 @@ O&G roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coor
 | **M8** | ✅ Complete | Document Verification: ingestion `POST /parse` endpoint (PDF/Excel/image/text), `ParseClient`, `RagService.chatWithDocument()`, `POST /api/chat/verify` (multipart), `ClaudeService` maxTokens overload (2048), Angular file attachment UI with chip strip |
 | **M9** | ✅ Complete | ANP Regulatory Crawler: `ingestion/src/crawler.py` — BFS scraper (depth 2) over ANP E&P portal, SHA-256 state tracking, `subject_path` routing by URL keyword (`reserva`/`recursos`/`bar` → `bar-questions`; else → `corporate-answers`), `.xls` support via xlrd, Portuguese OCR (`por+eng`), 3 s rate limiting, 300 s ingest timeout for scanned PDFs |
 | **M10** | ✅ Complete | Crawler HTML mode: `--mode html` / `--mode all` flags — extracts editorial text from ANP pages using Plone CMS selectors (`#content-core`, `.documentContent`, `#region-content`, `main`), strips nav/footer boilerplate, prepends breadcrumb hierarchy as RAG context (`Categoria: X > Y`), posts as `.txt` to `/ingest`. State key namespace `html::{slug}` keeps HTML and file entries separate. `CRAWLER_MODE` env var controls mode when triggered via the `/crawl` API endpoint. |
+| **M11** | ✅ Complete | BU Document Self-Ingest: `POST /api/documents/ingest` (multipart) — allows `bu-user`, `reserves-management`, and `reserves-coordination` roles to permanently index documents directly into Qdrant. BU path is derived server-side from the caller's `GROUP_BU_xxx` authority (never client-supplied). `IngestClient` delegates to ingestion service `POST /ingest`. Angular `BuUploadModalComponent` (cloud_upload button in chat input, hidden from other roles). Accepted types: PDF, XLSX, XLS, PNG, JPG, JPEG, TIFF, TXT, MD, CSV. |
 
 ## Environment Variables Reference
 
