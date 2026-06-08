@@ -16,6 +16,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { CdkTextareaAutosize, TextFieldModule } from '@angular/cdk/text-field';
 import { ChatService, Message, SourceCitation } from '../../core/services/chat.service';
 import { SafeMarkdownPipe } from '../../shared/pipes/safe-markdown.pipe';
@@ -41,6 +42,7 @@ interface ChatMessage {
     MatProgressSpinnerModule,
     MatTooltipModule,
     MatDialogModule,
+    MatSnackBarModule,
     TextFieldModule,
     SafeMarkdownPipe,
   ],
@@ -56,6 +58,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
+  private readonly snackBar = inject(MatSnackBar);
   private routeSub?: Subscription;
 
   get canIngestDocuments(): boolean {
@@ -196,6 +199,16 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.loading = false;
         this.pendingScroll = true;
       },
+    });
+  }
+
+  copySourceToClipboard(filename: string): void {
+    navigator.clipboard.writeText(filename).then(() => {
+      this.snackBar.open('Filename copied to clipboard', undefined, {
+        duration: 2000,
+        horizontalPosition: 'center',
+        verticalPosition: 'bottom',
+      });
     });
   }
 

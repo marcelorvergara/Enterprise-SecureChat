@@ -226,6 +226,26 @@
   max-width: 100%;
 }
 
+.sources-section ::ng-deep .source-chip {
+  cursor: pointer;
+}
+
+.chip-copy-icon {
+  font-size: 13px;
+  height: 13px;
+  width: 13px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  color: rgba(0, 0, 0, 0.38);
+  opacity: 0;
+  transition: opacity 0.15s;
+  vertical-align: middle;
+}
+
+.sources-section ::ng-deep .source-chip:hover .chip-copy-icon {
+  opacity: 1;
+}
+
 /* ── Typing indicator ─────────────────────────────────────────────────── */
 .typing-bubble {
   display: flex;

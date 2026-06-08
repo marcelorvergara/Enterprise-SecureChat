@@ -50,8 +50,10 @@
               <span class="sources-label">Sources</span>
               <mat-chip-set>
                 @for (src of msg.sources; track src.sourceFile) {
-                  <mat-chip [matTooltip]="src.sourceFile + ' · ' + src.subjectPath + ' · score: ' + src.score.toFixed(2)"
-                            matTooltipShowDelay="300">
+                  <mat-chip class="source-chip"
+                            [matTooltip]="src.sourceFile + ' · ' + src.subjectPath + ' · score: ' + src.score.toFixed(2) + ' · Click to copy'"
+                            matTooltipShowDelay="300"
+                            (click)="copySourceToClipboard(src.sourceFile)">
                     <mat-icon matChipAvatar>description</mat-icon>
                     <span class="chip-filename">{{ src.sourceFile }}</span>
                     @if (src.pageNumber) {
@@ -60,6 +62,7 @@
                     @if (src.sheetName) {
                       <span class="chip-detail"> · {{ src.sheetName }}</span>
                     }
+                    <mat-icon class="chip-copy-icon">content_copy</mat-icon>
                   </mat-chip>
                 }
               </mat-chip-set>
