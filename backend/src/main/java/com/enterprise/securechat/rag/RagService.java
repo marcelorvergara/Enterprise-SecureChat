@@ -18,8 +18,10 @@ import java.util.stream.Collectors;
 @Service
 public class RagService {
 
-    // Top-K chunks passed to Claude as context
-    private static final int TOP_K = 5;
+    // Top-K chunks passed to Claude as context.
+    // 10 gives BU-specific documents (which may compete with many corporate-answers
+    // chunks for the same query) a fair chance to surface in Claude's context window.
+    private static final int TOP_K = 10;
     // Last N conversation turns (user+assistant pairs) sent to Claude
     private static final int HISTORY_TURNS = 10;
 

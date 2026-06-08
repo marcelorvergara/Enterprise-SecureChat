@@ -67,7 +67,7 @@ class FgaServiceTest {
     }
 
     @Test
-    void getRestrictedPaths_noGroupMembershipProducesNoBuRestrictions() {
+    void getRestrictedPaths_crossBuRoleWithNoGroupSeesAllBus() {
         when(restrictionRepository.findSubjectPathsByRoleNames(List.of("reserves-coordination")))
             .thenReturn(List.of());
 
@@ -77,6 +77,32 @@ class FgaServiceTest {
         );
 
         assertThat(paths).doesNotContain("bu/campos", "bu/santos", "bu/solimoes");
+    }
+
+    @Test
+    void getRestrictedPaths_nonCrossBuRoleWithNoGroupIsBlockedFromAllBus() {
+        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("reservoir-team")))
+            .thenReturn(List.of());
+
+        var paths = fgaService.getRestrictedPaths(
+            List.of("reservoir-team"),
+            List.of()
+        );
+
+        assertThat(paths).contains("bu/campos", "bu/santos", "bu/solimoes");
+    }
+
+    @Test
+    void getRestrictedPaths_employeeWithNoGroupIsBlockedFromAllBus() {
+        when(restrictionRepository.findSubjectPathsByRoleNames(List.of("employee")))
+            .thenReturn(List.of());
+
+        var paths = fgaService.getRestrictedPaths(
+            List.of("employee"),
+            List.of()
+        );
+
+        assertThat(paths).contains("bu/campos", "bu/santos", "bu/solimoes");
     }
 
     @Test

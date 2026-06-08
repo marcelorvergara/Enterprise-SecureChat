@@ -21,6 +21,12 @@ public class FgaService {
         "reservoir-team", List.of("bar-questions")
     );
 
+    // Roles that may query across all BUs without belonging to a specific BU group.
+    // Every other role without a GROUP_BU_* authority is blocked from all bu/* paths.
+    private static final Set<String> CROSS_BU_ROLES = Set.of(
+        "admin", "reserves-management", "reserves-coordination"
+    );
+
     private final RoleRestrictionRepository restrictionRepository;
     private final String[] knownBus;
 
@@ -49,7 +55,7 @@ public class FgaService {
             );
         }
 
-        paths.addAll(computeBuRestrictedPaths(groups));
+        paths.addAll(computeBuRestrictedPaths(roles, groups));
 
         return paths;
     }
@@ -77,26 +83,31 @@ public class FgaService {
     }
 
     /**
-     * Derives the BU paths to block based on the user's group memberships.
-     * A user in GROUP_BU_CAMPOS can see bu/campos/** but not bu/santos/** or bu/solimoes/**.
-     * Users with no BU group (e.g. admin, reserves-coordination) receive no BU restrictions.
+     * Derives the BU paths to block based on roles and group memberships.
+     *
+     * - Has GROUP_BU_X → can see bu/X/**, blocked from all other bu/* paths.
+     * - No BU group + CROSS_BU_ROLES → unrestricted across all BUs.
+     * - No BU group + any other role → blocked from every bu/* path (default deny).
      */
-    private List<String> computeBuRestrictedPaths(List<String> groups) {
-        if (groups == null || groups.isEmpty()) {
-            return List.of();
-        }
-
-        Set<String> userBus = groups.stream()
+    private List<String> computeBuRestrictedPaths(List<String> roles, List<String> groups) {
+        Set<String> userBus = (groups == null ? List.<String>of() : groups).stream()
             .filter(g -> g.startsWith("GROUP_BU_"))
             .map(g -> g.substring("GROUP_BU_".length()).toLowerCase())
             .collect(Collectors.toSet());
 
-        if (userBus.isEmpty()) {
+        if (!userBus.isEmpty()) {
+            return java.util.Arrays.stream(knownBus)
+                .filter(bu -> !userBus.contains(bu.toLowerCase()))
+                .map(bu -> "bu/" + bu.toLowerCase())
+                .toList();
+        }
+
+        boolean hasCrossBuRole = roles != null && roles.stream().anyMatch(CROSS_BU_ROLES::contains);
+        if (hasCrossBuRole) {
             return List.of();
         }
 
         return java.util.Arrays.stream(knownBus)
-            .filter(bu -> !userBus.contains(bu.toLowerCase()))
             .map(bu -> "bu/" + bu.toLowerCase())
             .toList();
     }
