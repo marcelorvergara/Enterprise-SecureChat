@@ -38,6 +38,24 @@ _PERSON_ALLOWLIST = frozenset({
     "RESERVATÓRIO", "RESERVATORIO",
     "SUBSIDÊNCIA", "SUBSIDENCIA",
     "PALEOGEOGRAFIA", "PALEONTOLOGIA",
+    # O&G regulatory / legal terms that the English NER classifies as PERSON
+    "RESOLUÇÃO", "RESOLUCAO", "RANP",
+    "DESCOMISSIONAMENTO",
+    "GARANTIAS", "GARANTIA",
+    "SUPERINTENDÊNCIA", "SUPERINTENDENCIA",
+    "DESENVOLVIMENTO",
+    "CODIFICAÇÃO", "CODIFICACAO",
+    "CLASSIFICAÇÃO", "CLASSIFICACAO",
+    "PERFURAÇÃO", "PERFURACAO",
+    "EXPLORAÇÃO", "EXPLORACAO",
+    "EXPLOTAÇÃO", "EXPLOTACAO",
+    "PRODUÇÃO", "PRODUCAO",
+    "REGULAÇÃO", "REGULACAO",
+    "CERTIFICAÇÃO", "CERTIFICACAO",
+    "CONCESSÃO", "CONCESSAO",
+    "ABANDONO",
+    "POÇO", "POCO",
+    "OUTORGA", "LICENCIAMENTO",
 })
 
 # Minimum confidence score to accept a PERSON detection.
