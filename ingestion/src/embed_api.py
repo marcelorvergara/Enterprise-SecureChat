@@ -195,6 +195,7 @@ def start_crawl() -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": "Crawl already running"})
 
     from src import crawler  # deferred to avoid startup cost when not crawling
-    _crawl_thread = threading.Thread(target=crawler.run, daemon=True, name="anp-crawler")
+    mode = os.getenv("CRAWLER_MODE", "files")
+    _crawl_thread = threading.Thread(target=crawler.run, args=(mode,), daemon=True, name="anp-crawler")
     _crawl_thread.start()
     return JSONResponse(status_code=202, content={"status": "crawl started"})

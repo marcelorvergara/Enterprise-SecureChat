@@ -37,7 +37,7 @@ Architecture diagram: see [mermaid.txt](mermaid.txt).
 | **Identity** | Keycloak 24 (Docker) | OIDC token issuer, user/role management, AD emulation |
 | **FGA Registry** | Neon PostgreSQL | Stores role → subject_path restriction mappings and audit logs |
 | **Vector DB** | Qdrant 1.9 (Docker) | Stores document chunk embeddings with FGA metadata for filtered search |
-| **Ingestion** | Python 3.11 | Parses PDFs/Excel/images/text, chunks, embeds, upserts into Qdrant with FGA metadata; exposes `/parse` for ephemeral document text extraction and `/ingest` for crawler-driven indexing; `crawler.py` auto-discovers ANP regulatory documents |
+| **Ingestion** | Python 3.11 | Parses PDFs/Excel/images/text, chunks, embeds, upserts into Qdrant with FGA metadata; exposes `/parse` for ephemeral document text extraction and `/ingest` for crawler-driven indexing; `crawler.py` auto-discovers ANP regulatory documents and can extract HTML page text (`--mode html/all`) |
 | **DLP Service** | Python FastAPI + Presidio | Scans LLM answers for PII and sensitive values, replaces with `[REDACTED]` |
 | **LLM** | Claude API (claude-sonnet-4-6) | Generates natural language answers from retrieved context |
 
@@ -249,7 +249,7 @@ After the LLM generates its answer, the full text is sent to Presidio (DLP servi
 - **Excel `.xlsx`** — openpyxl (read-only, lazy iterator): first 30 data rows per sheet as row-level chunks with headers prepended; lazy iteration prevents memory overflow on large operational spreadsheets
 - **Excel `.xls`** — xlrd: same 30-row cap and header-prefix format for legacy Excel 97-2003 binary files
 - **Image** — Pillow + pytesseract OCR (`por+eng`): entire image OCR'd as a single chunk
-- **Plain text** (`.txt`, `.md`, `.csv`) — read as UTF-8; used only by `POST /parse` for ephemeral verification, never chunked or indexed
+- **Plain text** (`.txt`, `.md`, `.csv`) — read as UTF-8; used by `POST /parse` for ephemeral verification and by the crawler HTML mode (pages are converted to `.txt` before POSTing to `/ingest`)
 
 ### Chunking
 - Chunk size: 512 tokens, overlap: 64 tokens
@@ -275,18 +275,36 @@ documents:
 
 ### ANP Regulatory Crawler
 
-`ingestion/src/crawler.py` is a standalone BFS scraper that automatically discovers and indexes regulatory documents from the ANP Exploração e Produção portal (`gov.br/anp/…/exploracao-e-producao-de-oleo-e-gas`).
+`ingestion/src/crawler.py` is a standalone BFS scraper that automatically discovers and indexes content from the ANP Exploração e Produção portal (`gov.br/anp/…/exploracao-e-producao-de-oleo-e-gas`).
 
-**Crawl strategy:** BFS from the root URL up to depth 2, staying inside the ANP E&P URL prefix. On each page it collects all `.pdf`, `.xlsx`, and `.xls` hrefs. All file URLs are de-duplicated across pages before downloading.
+**Mode flag (`--mode`):**
 
-**Subject-path routing** (by URL keyword matching):
+| Mode | Behavior |
+|---|---|
+| `files` (default) | Downloads PDF, XLSX, XLS file links found on pages |
+| `html` | Extracts editorial text from each crawled HTML page |
+| `all` | Both files and HTML page text |
+
+When triggered via the `POST /crawl` API endpoint, the mode is read from the `CRAWLER_MODE` environment variable (defaults to `files`).
+
+**Crawl strategy:** BFS from the root URL up to depth 2, staying inside the ANP E&P URL prefix. Depth-2 pages contain the richest regulatory/procedural content. All discovered pages are visited once regardless of mode.
+
+**File mode — subject-path routing** (by URL keyword matching):
 
 | URL contains | `subject_path` assigned |
 |---|---|
 | `reserva`, `recursos`, or `bar` | `bar-questions` |
 | anything else | `corporate-answers` |
 
-**State tracking:** `ingestion/data/.crawler_state.json` stores `{filename → SHA-256}`. Files whose hash matches are skipped. Failed or interrupted files are not written to state and are retried on the next run.
+**HTML mode — content extraction:**
+
+The ANP portal runs Plone CMS. Content is extracted from the first matching selector: `#content-core` → `.documentContent` → `#region-content` → `main`. Before extracting text, boilerplate elements (nav, header, footer, share buttons, portlet navigation) are removed in-place. Each page's breadcrumb trail is extracted from `#portal-breadcrumbs` and prepended to the text as `Categoria: X > Y > Z` — this gives every Qdrant chunk its hierarchical site context, improving retrieval precision for regulatory topic queries. Pages with fewer than 80 characters of body text (thin pointer pages, JS-rendered accordions without static content) are skipped. All HTML pages go to `subject_path: corporate-answers` regardless of URL keywords.
+
+**State tracking:** `ingestion/data/.crawler_state.json` stores:
+- File entries: `{filename → SHA-256(bytes)}`
+- HTML entries: `{html::{slug} → SHA-256(extracted_text)}`
+
+The separate key namespace prevents collisions between file and HTML entries. For HTML, hashing the extracted text (not raw HTML) means gov.br nav-chrome updates do not trigger spurious re-ingests.
 
 **Operational limits:**
 - 3-second pause between HTTP requests (gov.br CDN rate limiting)

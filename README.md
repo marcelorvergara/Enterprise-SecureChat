@@ -253,7 +253,13 @@ docker compose run --rm ingestion \
 
 ### Option B — ANP Regulatory Crawler (automated)
 
-`ingestion/src/crawler.py` discovers and indexes documents from the ANP Exploração e Produção portal automatically.
+`ingestion/src/crawler.py` discovers and indexes content from the ANP Exploração e Produção portal automatically. It supports three modes via the `--mode` flag:
+
+| Mode | What is indexed |
+|---|---|
+| `files` (default) | PDF, XLSX, XLS file downloads |
+| `html` | Editorial text extracted from ANP HTML pages |
+| `all` | Both files and HTML pages |
 
 ```bash
 # Run via Docker (recommended — uses same network as ingestion service)
@@ -261,11 +267,21 @@ docker compose run --rm \
   -e INGEST_URL=http://ingestion:8001/ingest \
   ingestion python -m src.crawler
 
+# Index HTML page text only
+docker compose run --rm \
+  -e INGEST_URL=http://ingestion:8001/ingest \
+  ingestion python -m src.crawler --mode html
+
+# Index both files and HTML pages
+docker compose run --rm \
+  -e INGEST_URL=http://ingestion:8001/ingest \
+  ingestion python -m src.crawler --mode all
+
 # Run locally (ingestion service must be running separately)
-INGEST_URL=http://localhost:8001/ingest python -m src.crawler
+INGEST_URL=http://localhost:8001/ingest python -m src.crawler --mode all
 ```
 
-**How it works:**
+**How it works (files mode):**
 
 1. BFS crawl of `gov.br/anp/pt-br/assuntos/exploracao-e-producao-de-oleo-e-gas` up to depth 2 — discovers all sub-pages in the ANP E&P section.
 2. Collects all `.pdf`, `.xlsx`, and `.xls` links across all pages (de-duplicated).
@@ -276,18 +292,27 @@ INGEST_URL=http://localhost:8001/ingest python -m src.crawler
 5. POSTs the file to the `/ingest` endpoint, which parses, chunks, embeds, and upserts to Qdrant.
 6. Saves the state file so subsequent runs only process new or changed documents.
 
-**Supported file types:** `.pdf` (with OCR fallback for scanned pages), `.xlsx`, `.xls`
+**How it works (html mode):**
+
+1. Same BFS crawl collects all pages up to depth 2.
+2. For each page, extracts editorial text using Plone CMS selectors (`#content-core`, `.documentContent`, `#region-content`, `main`) and strips nav/footer boilerplate.
+3. Prepends the page's breadcrumb trail as `Categoria: X > Y > Z` so every Qdrant chunk carries its site-hierarchy context (aids retrieval precision).
+4. Pages where the extracted body is under 80 characters (thin pointer pages or JS-rendered accordions) are skipped.
+5. SHA-256 of the **extracted text** (not raw HTML) is stored under the key `html::{slug}` in the state file — nav-chrome changes on gov.br do not trigger re-ingests.
+6. POSTs as a `.txt` file to `/ingest` under `subject_path: corporate-answers`.
+
+**Supported content:** `.pdf` (OCR fallback for scanned pages), `.xlsx`, `.xls`, HTML page text (as `.txt`)
 
 **Rate limiting:** 3-second pause between requests to avoid gov.br CDN throttling.
 
-**Stopping mid-run is safe** — documents already ingested before the interruption are live in Qdrant immediately. The state file is written only at the end, so any files not recorded will be retried on the next run.
+**Stopping mid-run is safe** — documents already ingested before the interruption are live in Qdrant immediately. The state file is written after each successful ingest, so only unrecorded files are retried on the next run.
 
 If the crawler is rebuilt (e.g. after updating parsers), restart the persistent ingestion container before running it:
 
 ```bash
 cd infra
 docker compose up -d --no-deps ingestion   # picks up new image
-docker compose run --rm -e INGEST_URL=http://ingestion:8001/ingest ingestion python -m src.crawler
+docker compose run --rm -e INGEST_URL=http://ingestion:8001/ingest ingestion python -m src.crawler --mode all
 ```
 
 ---
@@ -453,7 +478,7 @@ Enterprise-SecureChat/
 │   ├── embedder.py     all-MiniLM-L6-v2 (384-dim)
 │   ├── qdrant_writer.py  upsert + delete_by_doc_id (idempotent)
 │   ├── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse, POST /ingest (2 pre-forked workers)
-│   └── crawler.py      ANP E&P portal BFS scraper — depth 2, SHA-256 state, auto subject_path routing
+│   └── crawler.py      ANP E&P portal BFS scraper — depth 2, SHA-256 state, --mode files/html/all
 ├── ingestion/tests/
 │   ├── test_chunker.py
 │   └── test_qdrant_writer.py
@@ -479,6 +504,7 @@ Enterprise-SecureChat/
 | `QDRANT_URL` | backend, ingestion | Default: `http://qdrant:6333` |
 | `KEYCLOAK_ADMIN` | keycloak | Admin console username |
 | `KEYCLOAK_ADMIN_PASSWORD` | keycloak | Admin console password |
+| `CRAWLER_MODE` | ingestion | Crawler mode when triggered via `/crawl` API: `files` (default), `html`, or `all` |
 
 All variables are documented in `infra/.env.example`.
 

@@ -1,28 +1,33 @@
 """
 ANP E&P regulatory crawler.
 
-Discovers PDF/XLSX links on the ANP Exploração e Produção portal, downloads new or
-changed files, and indexes them via the /ingest API endpoint.
+Discovers PDF/XLSX links and/or HTML page text on the ANP Exploração e Produção
+portal, downloads new or changed content, and indexes it via the /ingest API.
 
 Run (dev):
     INGEST_URL=http://localhost:8001/ingest python -m src.crawler
+    INGEST_URL=http://localhost:8001/ingest python -m src.crawler --mode html
+    INGEST_URL=http://localhost:8001/ingest python -m src.crawler --mode all
 
 Run (Docker):
-    docker compose run --rm ingestion python -m src.crawler
+    docker compose run --rm ingestion python -m src.crawler --mode html
 """
 
+import argparse
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 ANP_URL = "https://www.gov.br/anp/pt-br/assuntos/exploracao-e-producao-de-oleo-e-gas"
+_ANP_BASE_PATH = urlparse(ANP_URL).path.rstrip("/")
 INGEST_URL = os.getenv("INGEST_URL", "http://ingestion:8001/ingest")
 STATE_FILE = Path(__file__).parent.parent / "data" / ".crawler_state.json"
 
@@ -41,9 +46,29 @@ SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
 _BAR_KEYWORDS = ("reserva", "recursos", "bar")
 
 # Audience for OIDC token — the ingestion service base URL (no path).
-# e.g. "https://enp-securechat-ingestion-xxx.a.run.app"
 _INGEST_AUDIENCE = "/".join(INGEST_URL.split("/")[:3])
 
+# ── HTML extraction constants ──────────────────────────────────────────────────
+
+# Breadcrumb items to strip — generic gov.br navigation levels with no domain value
+_BREADCRUMB_SKIP = {"página inicial", "assuntos", "você está aqui", ""}
+
+# Tags always stripped from the content element before text extraction
+_BOILERPLATE_TAGS = ["nav", "header", "footer", "script", "style"]
+
+# CSS class pattern covering share buttons, social links, and site navigation portlets
+_BOILERPLATE_CLASSES = re.compile(
+    r"portlet-navigation|portletNavigationTree|portal-footer|portal-header"
+    r"|share|social|compartilh|documentActions",
+    re.I,
+)
+
+# Minimum characters in the extracted body text (excluding breadcrumb and h1)
+# below which the page is considered a thin pointer and skipped.
+MIN_BODY_CHARS = 80
+
+
+# ── Auth / identity ────────────────────────────────────────────────────────────
 
 def _fetch_identity_token() -> str | None:
     """Fetch a short-lived OIDC token from the GCP metadata server.
@@ -63,12 +88,17 @@ def _fetch_identity_token() -> str | None:
         return None
 
 
+# ── Routing ────────────────────────────────────────────────────────────────────
+
 def subject_path_for(url: str) -> str:
+    """Route a file URL to its subject_path based on URL keywords."""
     lower = url.lower()
     if any(k in lower for k in _BAR_KEYWORDS):
         return "bar-questions"
     return "corporate-answers"
 
+
+# ── State persistence ──────────────────────────────────────────────────────────
 
 def _state_location() -> str:
     if GCS_STATE_BUCKET:
@@ -116,6 +146,8 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+# ── HTTP helpers ───────────────────────────────────────────────────────────────
+
 def _fetch_soup(url: str) -> BeautifulSoup | None:
     """GET a page and return a BeautifulSoup, or None on error."""
     try:
@@ -129,6 +161,8 @@ def _fetch_soup(url: str) -> BeautifulSoup | None:
         print(f"[crawler] ERROR parsing {url}: {type(exc).__name__}: {exc}")
         return None
 
+
+# ── Link / page discovery ──────────────────────────────────────────────────────
 
 def discover_subpages(root_url: str) -> list[str]:
     """Return subpage URLs that are one level deeper than root_url.
@@ -147,7 +181,6 @@ def discover_subpages(root_url: str) -> list[str]:
     for tag in soup.find_all("a", href=True):
         absolute = urljoin(root_url, tag["href"].strip())
         parsed = urlparse(absolute)
-        # Must be same host, deeper than root, and contain no file extension
         if (
             parsed.netloc == urlparse(root_url).netloc
             and parsed.path.rstrip("/").startswith(root_path + "/")
@@ -188,6 +221,28 @@ def discover_links(page_url: str) -> list[tuple[str, str]]:
     return results
 
 
+def collect_pages(root_url: str, max_depth: int = 2) -> list[str]:
+    """BFS from root_url up to max_depth levels, staying inside the ANP E&P section."""
+    visited: set[str] = {root_url}
+    queue: list[tuple[str, int]] = [(root_url, 0)]
+    ordered: list[str] = [root_url]
+
+    while queue:
+        page_url, depth = queue.pop(0)
+        if depth >= max_depth:
+            continue
+        for subpage in discover_subpages(page_url):
+            if subpage not in visited:
+                visited.add(subpage)
+                ordered.append(subpage)
+                queue.append((subpage, depth + 1))
+        time.sleep(RATE_LIMIT_SECONDS)
+
+    return ordered
+
+
+# ── File download / ingest ─────────────────────────────────────────────────────
+
 def download(url: str) -> bytes | None:
     """Download a file, enforcing the size cap. Returns None on error."""
     try:
@@ -210,7 +265,12 @@ def download(url: str) -> bytes | None:
 def post_to_ingest(filename: str, content: bytes, bu_path: str) -> bool:
     """POST file bytes to the /ingest endpoint. Returns True on success."""
     ext = Path(filename).suffix.lower()
-    mime = "application/pdf" if ext == ".pdf" else "application/octet-stream"
+    if ext == ".pdf":
+        mime = "application/pdf"
+    elif ext == ".txt":
+        mime = "text/plain; charset=utf-8"
+    else:
+        mime = "application/octet-stream"
     token = _fetch_identity_token()
     auth_headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
@@ -233,29 +293,101 @@ def post_to_ingest(filename: str, content: bytes, bu_path: str) -> bool:
         return False
 
 
-def collect_pages(root_url: str, max_depth: int = 2) -> list[str]:
-    """BFS from root_url up to max_depth levels, staying inside the ANP E&P section."""
-    visited: set[str] = {root_url}
-    queue: list[tuple[str, int]] = [(root_url, 0)]
-    ordered: list[str] = [root_url]
+# ── HTML text extraction ───────────────────────────────────────────────────────
 
-    while queue:
-        page_url, depth = queue.pop(0)
-        if depth >= max_depth:
-            continue
-        for subpage in discover_subpages(page_url):
-            if subpage not in visited:
-                visited.add(subpage)
-                ordered.append(subpage)
-                queue.append((subpage, depth + 1))
-        time.sleep(RATE_LIMIT_SECONDS)
+def url_to_slug(url: str) -> str:
+    """Convert an ANP page URL to a short filesystem-safe slug.
 
-    return ordered
+    Strips the common ANP base path so depth-1 and depth-2 pages produce
+    compact, readable names: 'dados-de-e-p', 'seguranca-operacional_auditorias'.
+    """
+    path = urlparse(url).path.rstrip("/")
+    suffix = (
+        path[len(_ANP_BASE_PATH):].lstrip("/")
+        if path.startswith(_ANP_BASE_PATH)
+        else path.lstrip("/")
+    )
+    slug = re.sub(r"[^a-z0-9\-]", "_", suffix.replace("/", "_").lower())
+    return slug.strip("_") or "root"
 
 
-def run() -> None:
+def extract_breadcrumb(soup: BeautifulSoup) -> str:
+    """Return the page breadcrumb as 'Categoria: X > Y > Z', or '' if not found.
+
+    Strips the generic gov.br prefix ('Página Inicial > Assuntos') so only the
+    domain-relevant hierarchy levels are kept. The result is prepended to each
+    page's extracted text so every Qdrant chunk carries its site-hierarchy context.
+    """
+    el = soup.find(id="portal-breadcrumbs") or soup.find(class_="breadcrumbs")
+    if not el:
+        return ""
+
+    # Clickable breadcrumb levels are all inside <a> tags
+    items = [a.get_text(strip=True) for a in el.find_all("a")]
+
+    # The current page (last level) is plain text — not wrapped in a link
+    for node in reversed(list(el.descendants)):
+        if isinstance(node, NavigableString):
+            text = str(node).strip(" >\n\t")
+            if text and text.lower() not in _BREADCRUMB_SKIP and text not in items:
+                items.append(text)
+                break
+
+    parts = [i for i in items if i.lower() not in _BREADCRUMB_SKIP]
+    return ("Categoria: " + " > ".join(parts)) if parts else ""
+
+
+def extract_page_text(soup: BeautifulSoup) -> str | None:
+    """Extract editorial text from a parsed page.
+
+    Returns a string in the form:
+        Categoria: Exploração e Produção > Segurança Operacional > Auditorias
+        Fiscalização da Segurança Operacional - Auditorias
+
+        <body text...>
+
+    Returns None when the page body is below MIN_BODY_CHARS (thin pointer pages
+    or JS-rendered accordions with no static text content).
+    """
+    breadcrumb = extract_breadcrumb(soup)
+
+    h1_el = soup.find(class_="documentFirstHeading") or soup.find("h1")
+    h1_text = h1_el.get_text(strip=True) if h1_el else ""
+
+    # Try Plone-specific selectors before falling back to generic semantic elements
+    content_el = (
+        soup.find(id="content-core")
+        or soup.find(class_="documentContent")
+        or soup.find(id="region-content")
+        or soup.find("main")
+        or soup.find(id="wrapper")
+    )
+    if content_el is None:
+        return None
+
+    # Strip boilerplate in-place before text extraction
+    for tag in content_el.find_all(_BOILERPLATE_TAGS):
+        tag.decompose()
+    for el in content_el.find_all(class_=_BOILERPLATE_CLASSES):
+        el.decompose()
+
+    body = "\n".join(
+        line
+        for line in content_el.get_text(separator="\n", strip=True).splitlines()
+        if line.strip()
+    )
+
+    if len(body) < MIN_BODY_CHARS:
+        return None
+
+    return "\n".join(filter(None, [breadcrumb, h1_text, "", body]))
+
+
+# ── Main crawl loop ────────────────────────────────────────────────────────────
+
+def run(mode: str = "files") -> None:
     try:
-        _run()
+        _run(mode)
     except KeyboardInterrupt:
         print("[crawler] Interrupted — state was saved up to last completed file")
     except Exception as exc:
@@ -264,8 +396,8 @@ def run() -> None:
         traceback.print_exc()
 
 
-def _run() -> None:
-    print(f"[crawler] Starting ANP crawl — target: {ANP_URL}")
+def _run(mode: str = "files") -> None:
+    print(f"[crawler] Starting ANP crawl — target: {ANP_URL} — mode: {mode}")
     state = _load_state()
     new_count = updated_count = skipped_count = 0
 
@@ -273,45 +405,83 @@ def _run() -> None:
         pages_to_crawl = collect_pages(ANP_URL, max_depth=2)
         print(f"[crawler] Crawling {len(pages_to_crawl)} page(s) total (depth ≤ 2)")
 
-        # Deduplicate file URLs across all pages so the same file linked on
-        # multiple pages is only downloaded once.
-        seen_urls: set[str] = set()
-        all_links: list[tuple[str, str]] = []
-        for page_url in pages_to_crawl:
-            for url, filename in discover_links(page_url):
-                if url not in seen_urls:
-                    seen_urls.add(url)
-                    all_links.append((url, filename))
-            time.sleep(RATE_LIMIT_SECONDS)
+        # ── HTML pass ─────────────────────────────────────────────────────────
+        if mode in ("html", "all"):
+            print(f"[crawler] HTML pass — {len(pages_to_crawl)} page(s)")
+            for page_url in pages_to_crawl:
+                slug = url_to_slug(page_url)
+                state_key = f"html::{slug}"
 
-        print(f"[crawler] {len(all_links)} unique document(s) found across all pages")
+                soup = _fetch_soup(page_url)
+                if soup is None:
+                    skipped_count += 1
+                    time.sleep(RATE_LIMIT_SECONDS)
+                    continue
 
-        for url, filename in all_links:
-            content = download(url)
-            if content is None:
-                skipped_count += 1
+                text = extract_page_text(soup)
+                if text is None:
+                    print(f"[crawler] SKIP  {page_url} — no extractable content")
+                    skipped_count += 1
+                    time.sleep(RATE_LIMIT_SECONDS)
+                    continue
+
+                sha = _sha256(text.encode())
+                if state.get(state_key) == sha:
+                    print(f"[crawler] SKIP  {slug}.txt unchanged")
+                    skipped_count += 1
+                    time.sleep(RATE_LIMIT_SECONDS)
+                    continue
+
+                is_new = state_key not in state
+                filename = f"{slug}.txt"
+
+                if post_to_ingest(filename, text.encode(), "corporate-answers"):
+                    new_count += 1 if is_new else 0
+                    updated_count += 0 if is_new else 1
+                    state[state_key] = sha
+                    _save_state(state)
+
                 time.sleep(RATE_LIMIT_SECONDS)
-                continue
 
-            sha = _sha256(content)
-            if state.get(filename) == sha:
-                print(f"[crawler] SKIP  {filename} unchanged")
-                skipped_count += 1
+        # ── Files pass ────────────────────────────────────────────────────────
+        if mode in ("files", "all"):
+            # Deduplicate file URLs across all pages so the same file linked on
+            # multiple pages is only downloaded once.
+            seen_urls: set[str] = set()
+            all_links: list[tuple[str, str]] = []
+            for page_url in pages_to_crawl:
+                for url, filename in discover_links(page_url):
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        all_links.append((url, filename))
                 time.sleep(RATE_LIMIT_SECONDS)
-                continue
 
-            is_new = filename not in state
-            bu_path = subject_path_for(url)
+            print(f"[crawler] {len(all_links)} unique document(s) found across all pages")
 
-            if post_to_ingest(filename, content, bu_path):
-                if is_new:
-                    new_count += 1
-                else:
-                    updated_count += 1
-                state[filename] = sha
-                _save_state(state)  # Persist after each success so a timeout never loses progress
+            for url, filename in all_links:
+                content = download(url)
+                if content is None:
+                    skipped_count += 1
+                    time.sleep(RATE_LIMIT_SECONDS)
+                    continue
 
-            time.sleep(RATE_LIMIT_SECONDS)
+                sha = _sha256(content)
+                if state.get(filename) == sha:
+                    print(f"[crawler] SKIP  {filename} unchanged")
+                    skipped_count += 1
+                    time.sleep(RATE_LIMIT_SECONDS)
+                    continue
+
+                is_new = filename not in state
+                bu_path = subject_path_for(url)
+
+                if post_to_ingest(filename, content, bu_path):
+                    new_count += 1 if is_new else 0
+                    updated_count += 0 if is_new else 1
+                    state[filename] = sha
+                    _save_state(state)
+
+                time.sleep(RATE_LIMIT_SECONDS)
 
     finally:
         _save_state(state)
@@ -322,4 +492,16 @@ def _run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="ANP E&P regulatory crawler")
+    parser.add_argument(
+        "--mode",
+        choices=["files", "html", "all"],
+        default="files",
+        help=(
+            "files: download PDFs/XLSX only (default, backwards-compatible); "
+            "html: extract and index HTML page text only; "
+            "all: both HTML pages and file downloads"
+        ),
+    )
+    args = parser.parse_args()
+    run(args.mode)
