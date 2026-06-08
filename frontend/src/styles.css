@@ -379,6 +379,20 @@ mat-divider,
   color: var(--c-text) !important;
 }
 
+/* Cards */
+.mat-mdc-card {
+  background-color: var(--c-surface) !important;
+  color: var(--c-text) !important;
+}
+
+.mat-mdc-card-title {
+  color: var(--c-text) !important;
+}
+
+.mat-mdc-card-subtitle {
+  color: var(--c-text-2) !important;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    SCROLLBAR
    ══════════════════════════════════════════════════════════════════════════ */

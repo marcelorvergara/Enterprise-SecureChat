@@ -1,3 +1,10 @@
+/* ── Host: make admin page independently scrollable ──────────────────── */
+:host {
+  display: block;
+  height: 100%;
+  overflow-y: auto;
+}
+
 /* ── Page layout ────────────────────────────────────────────────────── */
 .admin-container {
   padding: 24px;
@@ -10,6 +17,8 @@
 
 .section-card {
   width: 100%;
+  background: var(--c-surface) !important;
+  color: var(--c-text) !important;
 }
 
 /* ── Page header ─────────────────────────────────────────────────────── */
@@ -20,21 +29,21 @@
   gap: 16px;
   flex-wrap: wrap;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.10);
+  border-bottom: 1px solid var(--c-border);
 }
 
 .page-title {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.87);
+  color: var(--c-text);
   line-height: 1.3;
 }
 
 .page-subtitle {
   margin: 4px 0 0;
   font-size: 0.875rem;
-  color: rgba(0, 0, 0, 0.54);
+  color: var(--c-text-2);
 }
 
 /* ── Stat pills ──────────────────────────────────────────────────────── */
@@ -127,7 +136,8 @@
 
 /* ── Inline code paths ──────────────────────────────────────────────── */
 .path {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--c-code-bg);
+  color: var(--c-code-text);
   border-radius: 4px;
   padding: 2px 7px;
   font-family: 'Roboto Mono', monospace;
@@ -164,7 +174,7 @@
   align-items: center;
   gap: 8px;
   padding: 40px 24px;
-  color: rgba(0, 0, 0, 0.38);
+  color: var(--c-text-3);
 }
 
 .empty-state-icon {
@@ -177,7 +187,7 @@
 .empty-state-heading {
   font-size: 1rem;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.54);
+  color: var(--c-text-2);
 }
 
 .empty-state-sub {
@@ -205,7 +215,7 @@
 }
 
 .cancel-btn {
-  color: rgba(0, 0, 0, 0.54);
+  color: var(--c-text-2);
 }
 
 /* ── Audit log scroll container ─────────────────────────────────────── */
@@ -213,7 +223,7 @@
   max-height: 420px;
   overflow-y: auto;
   margin-top: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--c-border);
   border-radius: 4px;
 }
 
@@ -228,14 +238,14 @@
   align-items: center;
   gap: 12px;
   padding: 24px 0;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--c-text-2);
   font-size: 0.9rem;
 }
 
 .no-data {
   padding: 24px;
   text-align: center;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--c-text-3);
   font-style: italic;
 }
 
@@ -246,6 +256,144 @@
 }
 
 .dim {
-  color: rgba(0, 0, 0, 0.35);
+  color: var(--c-text-3);
   font-style: italic;
+}
+
+/* ── Material table dark-theme overrides ────────────────────────────── */
+::ng-deep .full-table {
+  background: transparent !important;
+}
+
+::ng-deep .full-table .mat-mdc-header-row {
+  background: var(--c-surface) !important;
+}
+
+::ng-deep .full-table .mat-mdc-header-cell {
+  background: var(--c-surface) !important;
+  color: var(--c-text-2) !important;
+  border-bottom-color: var(--c-border) !important;
+}
+
+/* Sticky header keeps its background when content scrolls beneath it */
+::ng-deep .full-table .mat-mdc-header-row.mat-mdc-table-sticky .mat-mdc-header-cell {
+  background: var(--c-surface) !important;
+}
+
+::ng-deep .full-table .mat-mdc-row {
+  background: transparent !important;
+}
+
+::ng-deep .full-table .mat-mdc-row:hover .mat-mdc-cell {
+  background: var(--c-conv-h) !important;
+}
+
+::ng-deep .full-table .mat-mdc-cell {
+  background: transparent !important;
+  color: var(--c-text) !important;
+  border-bottom-color: var(--c-border) !important;
+}
+
+::ng-deep .mat-mdc-paginator {
+  background: var(--c-surface) !important;
+  color: var(--c-text-2) !important;
+  border-top: 1px solid var(--c-border);
+}
+
+::ng-deep .mat-mdc-paginator .mat-mdc-select-value,
+::ng-deep .mat-mdc-paginator .mat-mdc-paginator-range-label {
+  color: var(--c-text-2) !important;
+}
+
+::ng-deep .mat-mdc-paginator .mat-mdc-icon-button {
+  color: var(--c-text-2) !important;
+}
+
+::ng-deep .mat-mdc-paginator .mat-mdc-icon-button[disabled] {
+  color: var(--c-text-4) !important;
+}
+
+::ng-deep .mat-mdc-card-header .mat-mdc-card-title {
+  color: var(--c-text) !important;
+}
+
+::ng-deep .mat-mdc-card-header .mat-mdc-card-subtitle {
+  color: var(--c-text-2) !important;
+}
+
+/* ── Form field dark-theme overrides ────────────────────────────────── */
+
+/* Floating label */
+::ng-deep .add-form .mat-mdc-floating-label,
+::ng-deep .add-form .mdc-floating-label {
+  color: var(--c-text-2) !important;
+}
+
+/* Input text */
+::ng-deep .add-form .mat-mdc-input-element,
+::ng-deep .add-form input.mat-mdc-input-element {
+  color: var(--c-text) !important;
+  caret-color: var(--c-accent) !important;
+}
+
+/* Select trigger text */
+::ng-deep .add-form .mat-mdc-select-value-text,
+::ng-deep .add-form .mat-mdc-select-placeholder {
+  color: var(--c-text) !important;
+}
+
+/* Select arrow */
+::ng-deep .add-form .mat-mdc-select-arrow svg {
+  fill: var(--c-text-2) !important;
+}
+
+/* Outline border (idle) */
+::ng-deep .add-form .mdc-notched-outline__leading,
+::ng-deep .add-form .mdc-notched-outline__notch,
+::ng-deep .add-form .mdc-notched-outline__trailing {
+  border-color: var(--c-border-2) !important;
+}
+
+/* Outline border (focused) */
+::ng-deep .add-form .mat-mdc-form-field.mat-focused .mdc-notched-outline__leading,
+::ng-deep .add-form .mat-mdc-form-field.mat-focused .mdc-notched-outline__notch,
+::ng-deep .add-form .mat-mdc-form-field.mat-focused .mdc-notched-outline__trailing {
+  border-color: var(--c-accent) !important;
+}
+
+/* Focused label */
+::ng-deep .add-form .mat-mdc-form-field.mat-focused .mat-mdc-floating-label,
+::ng-deep .add-form .mat-mdc-form-field.mat-focused .mdc-floating-label {
+  color: var(--c-accent) !important;
+}
+
+/* Hint text */
+::ng-deep .add-form .mat-mdc-form-field-hint {
+  color: var(--c-text-3) !important;
+}
+
+/* Error text */
+::ng-deep .add-form .mat-mdc-form-field-error {
+  color: #f87171 !important;
+}
+
+/* Select panel dropdown */
+::ng-deep .mat-mdc-select-panel {
+  background: var(--c-menu-bg) !important;
+  border: 1px solid var(--c-border-2) !important;
+}
+
+::ng-deep .mat-mdc-option .mdc-list-item__primary-text {
+  color: var(--c-text) !important;
+}
+
+::ng-deep .mat-mdc-option:hover:not(.mat-mdc-option-disabled),
+::ng-deep .mat-mdc-option.mat-mdc-option-active {
+  background: var(--c-conv-h) !important;
+}
+
+/* "Add Restriction" submit button */
+::ng-deep .submit-btn.mat-mdc-raised-button[color="primary"] {
+  background: var(--c-accent) !important;
+  color: #ffffff !important;
 }
