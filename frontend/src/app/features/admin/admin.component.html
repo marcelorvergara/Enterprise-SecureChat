@@ -189,11 +189,15 @@
           <ng-container matColumnDef="roleNames">
             <th mat-header-cell *matHeaderCellDef>Roles</th>
             <td mat-cell *matCellDef="let row">
-              <mat-chip-set>
-                @for (r of row.roleNames; track r) {
-                  <mat-chip>{{ r }}</mat-chip>
-                }
-              </mat-chip-set>
+              @if (row.roleNames.length === 0) {
+                <span class="dim">—</span>
+              } @else {
+                <mat-chip-set>
+                  @for (r of row.roleNames; track r) {
+                    <mat-chip>{{ r }}</mat-chip>
+                  }
+                </mat-chip-set>
+              }
             </td>
           </ng-container>
 

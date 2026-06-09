@@ -72,6 +72,12 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.dialog.open(BuUploadModalComponent, { width: '420px' });
   }
 
+  readonly MAX_MESSAGE_LENGTH = 4000;
+
+  get charCount(): number {
+    return this.messageControl.value?.length ?? 0;
+  }
+
   messages: ChatMessage[] = [];
   readonly messageControl = new FormControl('');
   loading = false;
@@ -79,6 +85,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   attachedFile?: File;
 
   private pendingScroll = false;
+  private pendingRequest?: Subscription;
 
   ngOnInit(): void {
     this.authSub = this.auth.user$.subscribe(user => {
@@ -98,9 +105,19 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
     this.authSub?.unsubscribe();
+    this.pendingRequest?.unsubscribe();
+  }
+
+  stopGenerating(): void {
+    this.pendingRequest?.unsubscribe();
+    this.pendingRequest = undefined;
+    this.loading = false;
+    this.pendingScroll = true;
   }
 
   private reset(): void {
+    this.pendingRequest?.unsubscribe();
+    this.pendingRequest = undefined;
     this.messages = [];
     this.conversationId = undefined;
     this.loading = false;
@@ -115,7 +132,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.messages = msgs.map(m => ({
           role: m.role,
           content: m.content,
-          sources: m.sources ?? [],
+          sources: this.deduplicateSources(m.sources ?? []),
           fgaApplied: false,
           dlpEntitiesRedacted: 0,
         }));
@@ -178,7 +195,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
       ? this.chatService.verifyDocument(text, this.conversationId, fileToSend)
       : this.chatService.sendMessage({ message: text, conversationId: this.conversationId });
 
-    request$.subscribe({
+    this.pendingRequest = request$.subscribe({
       next: response => {
         this.conversationId = response.conversationId;
         if (wasNew) {
@@ -188,11 +205,12 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.messages.push({
           role: 'assistant',
           content: response.answer,
-          sources: response.sources ?? [],
+          sources: this.deduplicateSources(response.sources ?? []),
           fgaApplied: response.fgaApplied,
           dlpEntitiesRedacted: response.dlpEntitiesRedacted,
         });
         this.loading = false;
+        this.pendingRequest = undefined;
         this.pendingScroll = true;
       },
       error: () => {
@@ -204,9 +222,21 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
           dlpEntitiesRedacted: 0,
         });
         this.loading = false;
+        this.pendingRequest = undefined;
         this.pendingScroll = true;
       },
     });
+  }
+
+  private deduplicateSources(sources: SourceCitation[]): SourceCitation[] {
+    const best = new Map<string, SourceCitation>();
+    for (const src of sources) {
+      const existing = best.get(src.sourceFile);
+      if (!existing || src.score > existing.score) {
+        best.set(src.sourceFile, src);
+      }
+    }
+    return Array.from(best.values());
   }
 
   copySourceToClipboard(filename: string): void {

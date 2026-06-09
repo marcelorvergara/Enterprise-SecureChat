@@ -54,18 +54,15 @@
               <mat-chip-set>
                 @for (src of msg.sources; track src.sourceFile) {
                   <mat-chip class="source-chip"
-                            [matTooltip]="src.sourceFile + ' · ' + src.subjectPath + ' · score: ' + src.score.toFixed(2) + ' · Click to copy'"
+                            [matTooltip]="src.sourceFile + ' · ' + src.subjectPath + ' · score: ' + src.score.toFixed(2)"
                             matTooltipShowDelay="300"
                             (click)="copySourceToClipboard(src.sourceFile)">
                     <mat-icon matChipAvatar>description</mat-icon>
+                    <mat-icon class="chip-copy-icon">content_copy</mat-icon>
                     <span class="chip-filename">{{ src.sourceFile }}</span>
-                    @if (src.pageNumber) {
-                      <span class="chip-detail"> · p.{{ src.pageNumber }}</span>
-                    }
                     @if (src.sheetName) {
                       <span class="chip-detail"> · {{ src.sheetName }}</span>
                     }
-                    <mat-icon class="chip-copy-icon">content_copy</mat-icon>
                   </mat-chip>
                 }
               </mat-chip-set>
@@ -119,22 +116,31 @@
         (change)="onFileSelected($event)">
       <button class="composer-icon-btn" type="button"
         (click)="fileInput.click()" [disabled]="loading"
+        aria-label="Attach a document for compliance verification"
         matTooltip="Attach a document for compliance verification">
         <mat-icon>attach_file</mat-icon>
       </button>
       @if (canIngestDocuments) {
         <button class="composer-icon-btn" type="button"
           (click)="openBuUpload()" [disabled]="loading"
+          aria-label="Index a restricted document into your BU knowledge base"
           matTooltip="Index a restricted document into your BU knowledge base">
           <mat-icon>cloud_upload</mat-icon>
         </button>
       }
       <span class="composer-hint">Enter ↵ to send &nbsp;·&nbsp; Shift+Enter for new line</span>
+      <span class="char-counter"
+            [class.char-warn]="charCount >= 3200 && charCount < 4000"
+            [class.char-over]="charCount >= 4000">
+        {{ charCount }} / {{ MAX_MESSAGE_LENGTH }}
+      </span>
       <button class="composer-send" type="button"
-        (click)="sendMessage()"
-        [disabled]="loading || !messageControl.value?.trim()"
-        matTooltip="Send (Enter)">
-        <mat-icon>arrow_upward</mat-icon>
+        [class.composer-send--stop]="loading"
+        (click)="loading ? stopGenerating() : sendMessage()"
+        [disabled]="!loading && (!messageControl.value?.trim() || charCount > MAX_MESSAGE_LENGTH)"
+        [attr.aria-label]="loading ? 'Stop generating' : 'Send message'"
+        [matTooltip]="loading ? 'Stop generating' : 'Send (Enter)'">
+        <mat-icon>{{ loading ? 'stop' : 'arrow_upward' }}</mat-icon>
       </button>
     </div>
 

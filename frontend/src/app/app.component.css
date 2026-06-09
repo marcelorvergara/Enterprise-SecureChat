@@ -169,11 +169,15 @@
 
 .active-conv {
   background: var(--c-conv-act-bg) !important;
-  border-left: 2px solid var(--c-conv-act-br);
+  /* inset shadow used instead of border-left — not clipped by border-radius */
+  box-shadow: inset 3px 0 0 var(--c-conv-act-br) !important;
 }
 
-.active-conv .mdc-list-item__primary-text {
+/* ::ng-deep required — MDC inner elements are not stamped with the
+   component's encapsulation attribute */
+.active-conv ::ng-deep .mdc-list-item__primary-text {
   color: var(--c-conv-act-text) !important;
+  font-weight: 600 !important;
 }
 
 /* ── Conversation list item — two-line layout ─────────────────────── */

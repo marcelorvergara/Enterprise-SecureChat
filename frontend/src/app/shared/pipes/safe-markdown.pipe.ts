@@ -10,6 +10,10 @@ export class SafeMarkdownPipe implements PipeTransform {
   transform(value: string | null | undefined): SafeHtml {
     const rawHtml = marked.parse(value ?? '') as string;
     const cleanHtml = DOMPurify.sanitize(rawHtml);
-    return this.sanitizer.bypassSecurityTrustHtml(cleanHtml);
+    const withRedacted = cleanHtml.replace(
+      /\[REDACTED\]/g,
+      '<span class="dlp-redacted">[REDACTED]</span>',
+    );
+    return this.sanitizer.bypassSecurityTrustHtml(withRedacted);
   }
 }
