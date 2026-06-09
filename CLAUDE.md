@@ -31,7 +31,7 @@ Browser → Angular (nginx:4200)
 | App DB | Neon (serverless PostgreSQL) |
 | LLM | Claude `claude-sonnet-4-6` via Anthropic Messages API |
 | Ingestion | Python 3.11 · sentence-transformers `all-MiniLM-L6-v2` · 384-dim vectors |
-| DLP | Python 3.11 · FastAPI · Microsoft Presidio · spaCy `en_core_web_lg` |
+| DLP | Python 3.11 · FastAPI · Microsoft Presidio · spaCy `pt_core_news_lg` |
 
 ## Quick Start
 
@@ -174,8 +174,23 @@ HTML mode (`--mode html` / `--mode all`) uses the same state file but a separate
 
 File entries in `.crawler_state.json` are stored as `{filename: {"sha": "hex", "size": N}}`. On subsequent runs, the crawler sends a HEAD request to check `Content-Length` before downloading — if the remote size matches `size`, the file is skipped immediately (0.5 s pause) without any download. HTML entries remain plain `{html::slug: sha_str}` strings (no size probe possible since content is extracted from fetched HTML). State entries written by older crawler versions (`{filename: sha_str}` without a size) are migrated transparently on the first run: a HEAD request populates the size without re-downloading.
 
-### 8. FINANCIAL_FIGURE recognizer only catches amounts with explicit currency markers
-The custom Presidio recognizer (`dlp-service/src/custom_recognizers/financial_figures.py`) matches patterns that include a currency symbol (`$`, `€`, `R$`), a currency code prefix (`USD`, `EUR`, `BRL`), or a magnitude qualifier (`million`, `billion`, `thousand`). A bare number like `450,000` with no currency marker is **not** redacted. This is a known gap. Fix by adding a standalone large-number pattern (e.g. numbers ≥ 1,000 with comma separators in a financial context) or by having the system prompt instruct Claude to always include currency symbols when citing amounts.
+### 8. DLP entity set — O&G domain, Portuguese NLP model
+The DLP service runs `pt_core_news_lg` (not `en_core_web_lg`) so Brazilian geological basin/field names (Pré-Sal, Campos, Santos) are classified as LOC/GPE by spaCy's NER, not falsely flagged as PERSON. Industry acronyms (FPSO, LNG, PETROBRAS, etc.) are additionally allowlisted in `_PERSON_ALLOWLIST`.
+
+Active entity types and their source files:
+
+| Entity | File | Covers |
+|---|---|---|
+| `FINANCIAL_FIGURE` | `financial_figures.py` | Currency symbols, currency-code amounts, magnitude phrases, bare comma-grouped numbers (≥1 comma group, score 0.75) |
+| `OG_VOLUMES` | `og_rules.py` | Reserve/production volumes: boe, MMboe, Mboe, bbl, bbl/d, m³/d |
+| `ANP_PROCESS` | `og_rules.py` | Ofício Nº, Carta Nº, Processo SEI, bare SEI number |
+| `RESERVES_VARIATION` | `og_rules.py` | Signed % + `variação/variações`; `fator de recuperação / recovery factor` |
+| `INVESTMENT_YEAR` | `og_rules.py` | Year after investment keywords (fixed-length lookbehinds); year ranges fire only near context words (base score 0.30 < threshold) |
+| `OG_CONTRACT` | `og_rules.py` | Contract end date/year (`prazo do contrato`, `término`, `vencimento`); `limite econômico / economic limit`; Cessão Onerosa / Transfer of Rights percentages |
+| `COMMODITY_PRICE` | `og_rules.py` | `/bbl` and `/MMBtu` prices; labeled `preço do barril`, `preço de venda do gás`, `barrel price`, `gas price` |
+| `DATE_TIME` | SpacyRecognizer | Document dates via spaCy NER — no custom recognizer needed |
+
+`OG_VOLUMES` was previously registered but absent from `_DEFAULT_ENTITIES` (dead code); this is fixed. Do not remove `OG_VOLUMES` from `_DEFAULT_ENTITIES` again — it would silently stop redacting reserve figures.
 
 ## Key Configuration (application.yml)
 
@@ -213,7 +228,7 @@ O&G roles: `admin`, `employee`, `bu-user`, `reserves-management`, `reserves-coor
 | **M1** | ✅ Complete | Spring Boot core: JWT security, `RolesExtractor`, `FgaService`, `HealthController` |
 | **M2** | ✅ Complete | Python ingestion pipeline: PDF/Excel/image parsers, chunker, embedder, Qdrant writer, `/embed` API |
 | **M3** | ✅ Complete | RAG orchestrator: `RagService`, `ClaudeService`, `QdrantSearchClient`, `EmbedClient`, conversation persistence, SHA-256 audit log |
-| **M4** | ✅ Complete | DLP microservice (FastAPI + Presidio), `DlpClient`, wired into `RagService` after Claude response |
+| **M4** | ✅ Complete | DLP microservice (FastAPI + Presidio), `DlpClient`, wired into `RagService` after Claude response. NLP model: `pt_core_news_lg`. O&G entity set: `FINANCIAL_FIGURE`, `OG_VOLUMES`, `ANP_PROCESS`, `RESERVES_VARIATION`, `INVESTMENT_YEAR`, `OG_CONTRACT`, `COMMODITY_PRICE`, `DATE_TIME`. |
 | **M5** | ✅ Complete | Angular 17 frontend: Auth0 OIDC (`@auth0/auth0-angular`), JWT interceptor, Material shell, chat UI, SafeMarkdownPipe, admin stub |
 | **M6** | ✅ Complete | `AdminController` (restriction CRUD, `@PreAuthorize("hasRole('admin')")`), Bucket4j rate limiting (20 req/min per `sub`), security headers, Angular admin panel |
 | **M7** | ✅ Complete | JUnit 5 + Mockito backend tests (`FgaServiceTest`, `RagServiceTest`), pytest ingestion tests (chunker, ancestor_paths, deterministic IDs), pytest DLP tests (FINANCIAL_FIGURE recognizer + redaction), root `README.md` |

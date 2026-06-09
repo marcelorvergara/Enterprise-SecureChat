@@ -252,10 +252,11 @@ Verify: finance-analyst with `finance/payroll` restriction cannot get payroll da
 
 Files under `dlp-service/src/`:
 - `main.py` — FastAPI app with `POST /dlp/analyze`
-- `analyzer.py` — Presidio `AnalyzerEngine` + `AnonymizerEngine`
-- `custom_recognizers/financial_figures.py` — `PatternRecognizer` for currency patterns (`\$[\d,]+(\.\d{2})?`, amounts with `USD/EUR/BRL/million/billion`)
+- `analyzer.py` — Presidio `AnalyzerEngine` + `AnonymizerEngine`; NLP engine: `pt_core_news_lg`
+- `custom_recognizers/financial_figures.py` — `FINANCIAL_FIGURE`: currency symbols, currency-code amounts, magnitude phrases, bare comma-grouped numbers
+- `custom_recognizers/og_rules.py` — O&G domain recognizers: `OG_VOLUMES`, `ANP_PROCESS`, `RESERVES_VARIATION`, `INVESTMENT_YEAR`, `OG_CONTRACT`, `COMMODITY_PRICE`
 
-Default entities redacted: `PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `CREDIT_CARD`, `CURRENCY`, `FINANCIAL_FIGURE` (custom).
+Default entities redacted: `PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `CREDIT_CARD`, `DATE_TIME`, `FINANCIAL_FIGURE`, `OG_VOLUMES`, `ANP_PROCESS`, `RESERVES_VARIATION`, `INVESTMENT_YEAR`, `OG_CONTRACT`, `COMMODITY_PRICE`.
 
 Anonymization: replace with `[REDACTED]` (not fake values).
 
@@ -263,7 +264,7 @@ In `RagService.java`, after Claude responds: call `dlp-service:8000/dlp/analyze`
 
 DLP service is internal-only — no external port in docker-compose.
 
-Verify: answer containing `$125,000` → `[REDACTED]`; non-financial answers pass through unchanged; DLP latency < 500ms.
+Verify: answer containing `$125,000` → `[REDACTED]`; `450 MMboe` → `[REDACTED]`; `prazo do contrato: 31/12/2035` → `[REDACTED]`; non-sensitive answers pass through unchanged; DLP latency < 500ms.
 
 ---
 

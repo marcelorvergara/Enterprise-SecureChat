@@ -105,7 +105,7 @@ flowchart TD
 | App DB | Neon (serverless PostgreSQL) |
 | LLM | Claude `claude-sonnet-4-6` via Anthropic Messages API |
 | Ingestion | Python 3.11 · sentence-transformers `all-MiniLM-L6-v2` · 384-dim vectors |
-| DLP | Python 3.11 · FastAPI · Microsoft Presidio · spaCy `en_core_web_lg` |
+| DLP | Python 3.11 · FastAPI · Microsoft Presidio · spaCy `pt_core_news_lg` |
 | Rate Limiting | Bucket4j 8.10 (20 req/min per user, in-memory token buckets) |
 
 ---
@@ -345,7 +345,24 @@ The `/api/chat` endpoint waits for Claude to finish generating the complete resp
 
 Presidio's NER models (spaCy `en_core_web_lg`) require full sentence context to accurately detect named entities. Streaming token-by-token breaks entity detection at sentence boundaries — e.g., a person's name split across two chunks may not be flagged.
 
-The DLP service redacts: `PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `CREDIT_CARD`, plus a custom `FINANCIAL_FIGURE` recognizer that catches `$125,000`, `€12.50`, `R$1.234,56`, `45 million USD`, `EUR 12,000`, and similar patterns.
+The DLP service uses `pt_core_news_lg` (Portuguese spaCy model) so Brazilian geological/basin names are correctly classified as locations rather than people. It redacts the following entity types:
+
+| Entity type | What it catches | Example |
+|---|---|---|
+| `PERSON` | Personal names (score ≥ 0.75, org acronyms allowlisted) | "João Silva" |
+| `EMAIL_ADDRESS` | Email addresses | joao@empresa.com |
+| `PHONE_NUMBER` | Phone numbers | +55 11 99999-9999 |
+| `CREDIT_CARD` | Credit card numbers | 4111 1111 1111 1111 |
+| `DATE_TIME` | Document dates (via spaCy NER) | 31/12/2035 |
+| `FINANCIAL_FIGURE` | Currency amounts + bare comma-grouped numbers | R$125.000, 450,000 |
+| `OG_VOLUMES` | Reserve/production volumes with unit markers | 450 MMboe, 3.2 bbl/d, 1,200 bbl |
+| `ANP_PROCESS` | Official letter and process numbers | Ofício Nº 402/2026, Processo 48500.0012/2025-31 |
+| `RESERVES_VARIATION` | Signed reserve variation percentages and recovery factor | +4.2% variação, fator de recuperação: 28% |
+| `INVESTMENT_YEAR` | Year numbers in investment context; year ranges near investment keywords | investimento em 2027, CAPEX 2028, 2025 a 2031 |
+| `OG_CONTRACT` | Contract end dates/years, economic limits, Cessão Onerosa data | prazo do contrato: 31/12/2035, limite econômico: 150 bbl/d |
+| `COMMODITY_PRICE` | Barrel and natural-gas sales prices | 70 USD/bbl, preço do barril: 65, $2.50/MMBtu |
+
+All patterns are bilingual (PT + EN) unless the entity is unit-anchored (e.g., `/bbl`, `MMBtu`), in which case the unit itself makes language irrelevant.
 
 ### Document Verification
 
@@ -420,7 +437,7 @@ npm test                     # Jest unit tests
 ```bash
 cd dlp-service
 pip install -r requirements.txt
-python -m spacy download en_core_web_lg
+python -m spacy download pt_core_news_lg
 uvicorn src.main:app --host 0.0.0.0 --port 8000   # dev server
 pytest tests/                                        # run DLP tests
 ```
@@ -460,7 +477,7 @@ Enterprise-SecureChat/
 │   ├── analyzer.py     Presidio engines (module-level singletons)
 │   └── custom_recognizers/
 │       ├── financial_figures.py   FINANCIAL_FIGURE — currency-marked amounts
-│       └── og_rules.py            OG_VOLUMES, ANP_PROCESS, RESERVES_VARIATION
+│       └── og_rules.py            OG_VOLUMES, ANP_PROCESS, RESERVES_VARIATION, INVESTMENT_YEAR, OG_CONTRACT, COMMODITY_PRICE
 ├── dlp-service/tests/
 │   ├── test_financial_recognizer.py
 │   └── test_og_recognizers.py

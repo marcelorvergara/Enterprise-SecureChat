@@ -14,6 +14,9 @@ from .custom_recognizers.og_rules import (
     build_og_volumes_recognizer,
     build_anp_process_recognizer,
     build_reserves_variation_recognizer,
+    build_investment_year_recognizer,
+    build_og_contract_recognizer,
+    build_commodity_price_recognizer,
 )
 
 _DEFAULT_ENTITIES = [
@@ -21,9 +24,14 @@ _DEFAULT_ENTITIES = [
     "EMAIL_ADDRESS",
     "PHONE_NUMBER",
     "CREDIT_CARD",
+    "DATE_TIME",
     "FINANCIAL_FIGURE",
+    "OG_VOLUMES",
     "ANP_PROCESS",
     "RESERVES_VARIATION",
+    "INVESTMENT_YEAR",
+    "OG_CONTRACT",
+    "COMMODITY_PRICE",
 ]
 
 # Belt-and-suspenders allowlist for the PT model.
@@ -64,6 +72,9 @@ def init_engines() -> None:
     registry.add_recognizer(build_og_volumes_recognizer())
     registry.add_recognizer(build_anp_process_recognizer())
     registry.add_recognizer(build_reserves_variation_recognizer())
+    registry.add_recognizer(build_investment_year_recognizer())
+    registry.add_recognizer(build_og_contract_recognizer())
+    registry.add_recognizer(build_commodity_price_recognizer())
 
     _analyzer = AnalyzerEngine(
         nlp_engine=nlp_engine,

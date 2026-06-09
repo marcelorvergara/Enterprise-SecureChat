@@ -229,15 +229,22 @@ Restriction logic is enforced inside Qdrant, not in the LLM:
 **Tree inheritance:** A restriction on `"finance"` automatically blocks `"finance/payroll"`, `"finance/budgets"`, etc., because all descendants store `"finance"` in their `ancestor_paths` array.
 
 ### 6.3 DLP — Output Redaction
-After the LLM generates its answer, the full text is sent to Presidio (DLP service) before returning to the client. Presidio detects and replaces:
+After the LLM generates its answer, the full text is sent to Presidio (DLP service) before returning to the client. The NLP engine is `pt_core_news_lg` (Portuguese spaCy model) so Brazilian geological names are classified as LOC/GPE rather than PERSON. Industry acronyms (FPSO, PETROBRAS, etc.) are allowlisted. Presidio detects and replaces:
 
-| Entity type | Example | Replaced with |
-|-------------|---------|---------------|
-| `PERSON` | "John Smith" | `[REDACTED]` |
-| `EMAIL_ADDRESS` | john@company.com | `[REDACTED]` |
-| `PHONE_NUMBER` | +55 11 99999-9999 | `[REDACTED]` |
-| `CREDIT_CARD` | 4111 1111 1111 1111 | `[REDACTED]` |
-| `FINANCIAL_FIGURE` (custom) | $125,000 / 78.50 USD | `[REDACTED]` |
+| Entity type | Source | Example | Replaced with |
+|---|---|---|---|
+| `PERSON` | SpacyRecognizer (PT NER) | "João Silva" | `[REDACTED]` |
+| `EMAIL_ADDRESS` | EmailRecognizer | joao@empresa.com | `[REDACTED]` |
+| `PHONE_NUMBER` | PhoneRecognizer | +55 11 99999-9999 | `[REDACTED]` |
+| `CREDIT_CARD` | CreditCardRecognizer | 4111 1111 1111 1111 | `[REDACTED]` |
+| `DATE_TIME` | SpacyRecognizer (PT NER) | 31/12/2035, 15 de junho de 2026 | `[REDACTED]` |
+| `FINANCIAL_FIGURE` | custom — `financial_figures.py` | R$125.000, 450,000, 45 million USD | `[REDACTED]` |
+| `OG_VOLUMES` | custom — `og_rules.py` | 450 MMboe, 3.2 bbl/d, 1,200 bbl | `[REDACTED]` |
+| `ANP_PROCESS` | custom — `og_rules.py` | Ofício Nº 402/2026, Processo 48500.0012/2025-31 | `[REDACTED]` |
+| `RESERVES_VARIATION` | custom — `og_rules.py` | +4.2% variação, fator de recuperação: 28% | `[REDACTED]` |
+| `INVESTMENT_YEAR` | custom — `og_rules.py` | investimento em 2027, CAPEX 2028, 2025 a 2031 | `[REDACTED]` |
+| `OG_CONTRACT` | custom — `og_rules.py` | prazo do contrato: 31/12/2035, limite econômico: 150 bbl/d | `[REDACTED]` |
+| `COMMODITY_PRICE` | custom — `og_rules.py` | 70 USD/bbl, preço do barril: 65, $2.50/MMBtu | `[REDACTED]` |
 
 ---
 
@@ -334,7 +341,7 @@ The Spring Boot backend calls `ingestion:8001/embed` on every chat request. Conf
 - Uvicorn workers: 2 (model pre-loaded, no cold-start per request)
 
 ### DLP Latency Budget
-Presidio with `en_core_web_lg` runs in ~100–300ms per analysis on typical answers. Target: < 500ms.
+Presidio with `pt_core_news_lg` runs in ~100–300ms per analysis on typical answers. Target: < 500ms.
 
 ---
 
