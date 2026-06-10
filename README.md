@@ -1,15 +1,97 @@
-# Enterprise SecureChat
+# E&P SecureChat — Exploration & Production Intelligence
 
-An enterprise AI chat platform that answers questions using your company's own documents — with three security layers built in:
-
-- **FGA (Fine-Grained Authorization)** — Qdrant-level path filtering ensures users only retrieve documents they are permitted to read. There is no application-layer bypass.
-- **DLP (Data Loss Prevention)** — Microsoft Presidio scrubs PII and financial figures from every LLM answer before it reaches the browser. Raw Claude output never leaves the backend.
-- **Audit Trail** — Every query logs the user, their roles, the paths that were blocked, and a SHA-256 hash of the prompt. The raw prompt is never stored.
-- **Document Verification** — Upload a file (PDF, Excel, image, or plain text) and ask the system to cross-reference it against the indexed knowledge base. The document is parsed ephemerally, injected into the Claude context, and never persisted.
+> An enterprise-grade AI assistant purpose-built for the Oil & Gas sector. Every answer is drawn from indexed company documents, filtered at the vector-database layer by the caller's exact role, and scrubbed of financial figures and PII before it leaves the backend — with zero raw prompt data ever touching disk.
 
 ---
 
-## Architecture
+## Product Overview
+
+E&P SecureChat transforms how Exploration & Production teams interact with their institutional knowledge. Analysts, reservoir engineers, BU managers, and compliance officers all share a single conversational interface — yet each sees precisely what their role permits, enforced not by application logic that can be bypassed, but by a cryptographic path filter applied inside the vector database before the language model is ever invoked.
+
+### Key Capabilities
+
+**Local-First to Serverless RAG**
+Documents are parsed, chunked into 512-token segments with 64-token overlap, embedded with `all-MiniLM-L6-v2` (384-dim), and written to Qdrant with a hierarchical `ancestor_paths` payload. The same pipeline runs identically on Docker Compose locally or across four Cloud Run services at zero idle cost. No external embedding API is required — the ingestion service owns the full vector lifecycle.
+
+**Ephemeral Document Verification**
+Analysts can attach a PDF, Excel sheet, or scanned image directly to a query. The backend routes the multipart upload to `POST /api/chat/verify`, which parses the file ephemerally via the ingestion service, injects the raw text into the Claude system prompt alongside the indexed knowledge base, and discards the document text after the response is generated. Nothing from the uploaded file is persisted in conversation history, the audit log, or the vector store.
+
+**Automated ANP Regulatory Crawling**
+A built-in BFS crawler targets the ANP Exploração e Produção portal (`gov.br/anp`) up to depth 2. It downloads PDF, XLSX, and XLS files and can optionally extract editorial text directly from ANP HTML pages using Plone CMS selectors. Crawl state is maintained as a SHA-256 map — subsequent runs skip unchanged content via HEAD-only size probes in ~0.5 s per file. On GCP, the crawler runs as a scheduled Cloud Run Job every Monday at 03:00 BRT.
+
+---
+
+## Visual Product Tour
+
+### The Workspace — BU-Scoped Intelligence
+
+![](<docs/print bu-user.png>)
+
+A BU analyst authenticated as `erica` queries the Santos basin asset valuation. The Angular 17 Material interface presents a persistent sidebar with full conversation history on the left and a clean chat workspace on the right. The response is rendered as structured Markdown — numbered sections for Reserves Volumes, Investment Projections, Recovery Improvements, and Key Observations — sourced from the document `BU-SANTOS-SAN-RESERVES-2026 (Classification: RESTRICTED / SANTOS RESERVES MANAGEMENT)`.
+
+Notice the orange-highlighted spans throughout the answer: those are **live DLP redactions**. The raw Claude output contained explicit financial figures and reserve volumes; the Presidio post-processor intercepted them before the response reached the browser, replacing each entity with a highlighted `[REDACTED]` marker. The BU user receives the structural insight without exposure to the numerical data their role does not permit.
+
+---
+
+### Context-Aware Insights — Reserves Coordination View
+
+![](<docs/print reserves-coorditation.png>)
+
+The same query issued by a `reserves-coordination` user surfaces the full unredacted analysis: **Santos Basin Asset Valuation — Merkuza Extraction Data Analysis**. Because this role carries cross-BU read access, the FGA filter returns richer context from the Qdrant search — and because the DLP entity rules are calibrated per authority level, the financial figures pass through.
+
+The response demonstrates the RAG pipeline's citation fidelity: specific document references are embedded inline (e.g., `BI-SANTOS SAN RESERVES 2026`), investment expenditure is structured as `USD 140 million` with a named investment plan, and recovery improvements are grounded in a specific extraction data set. Section 4 surfaces a compliance note directly from the source document: *"This document is classified as RESTRICTED // SANTOS RESERVES MANAGEMENT — cross-BU production data may only appear in a comprehensive full-field valuation."*
+
+---
+
+### Access Control Administration
+
+![](<docs/print admin page.png>)
+
+The Admin panel — accessible only to users with the `admin` role via `@PreAuthorize("hasRole('admin')")` on every endpoint — exposes two panels. The **Add Restriction** form on the left allows an administrator to bind any role to any subject path with an optional reason that is persisted to the audit log. The **Restriction Matrix** on the right lists all active restrictions with their role, subject path, and creation date, and provides a per-row delete action.
+
+The **Restriction Audit Log** at the bottom is the compliance backbone: every query that triggered an FGA restriction is recorded with its timestamp, user ID (hashed), blocked path, and a query hash — the SHA-256 of the raw prompt. No plaintext query text is ever stored. The audit log satisfies the requirement to prove a query occurred while ensuring the prompt content itself cannot be reconstructed from the database.
+
+---
+
+### Document Verification with Role-Based Redaction
+
+![](<docs/print admin answer.png>)
+
+An admin user runs a document verification query with four attached reserve reports (visible as file chips at the bottom of the input bar: `san-field-update.pdf`, `alb-campo-valuation.pdf`, `sol-producao-anual.pdf`, and a fourth). The response synthesizes the uploaded documents against the indexed knowledge base and presents a focused summary of the numerical reserve data.
+
+Even for an admin, the DLP pipeline is active: financial figures in the response appear as `[REDACTED]` spans. The system architecture enforces DLP universally — there is no role that bypasses the Presidio post-processor. The `max_tokens=2048` budget for the verify endpoint ensures full compliance reports are never truncated mid-analysis.
+
+---
+
+## The Multi-Layered Security Mesh
+
+E&P SecureChat enforces data protection at three independent layers. Disabling any one of them would require a deliberate code change — there is no configuration flag that removes a layer.
+
+### Fine-Grained Authorization (FGA)
+
+> **How it works:** When a document at `bu/santos/reserves/field-update.pdf` is ingested, the pipeline writes `ancestor_paths: ["bu", "bu/santos", "bu/santos/reserves"]` into the Qdrant payload. When `FgaService.buildQdrantFilter()` runs for a user whose role is restricted from `bu/santos`, it produces a `must_not` filter passed directly to `QdrantSearchClient.search()` — before the embedding is even ranked. Every document at `bu/santos/*` is excluded **mathematically** by the vector database, not by post-filtering in Java. Restricting a parent path silently blocks all descendants with no recursive logic required.
+>
+> **Why it cannot be bypassed:** The filter is constructed from the live restriction table at request time (not cached) and is the only argument passed to Qdrant. There is no secondary search path to `/api/chat`. Spring Security's `@PreAuthorize` blocks non-admin users from modifying the restriction table.
+
+### Role-Aware Data Loss Prevention (DLP)
+
+> **How it works:** After Claude generates its draft answer, the backend sends the full response text to `http://dlp-service:8000/dlp/analyze`. The DLP microservice runs Microsoft Presidio with a Portuguese spaCy NER model (`pt_core_news_lg`) and eight custom O&G recognizers covering financial figures, reserve volumes, ANP process numbers, reserve variation percentages, investment years, contract terms, commodity prices, and document dates. Any detected entity is replaced with `[REDACTED]` before the response is returned to the Angular client.
+>
+> **Why it is blocking (non-streaming):** Presidio's NER models require complete sentence context. A person's name or a financial clause split across two streamed chunks may not be detected. The `/api/chat` endpoint intentionally waits for the full Claude response before calling DLP. When streaming is added in a future milestone, a sentence-buffer flush approach is required.
+>
+> **Why `pt_core_news_lg` and not the English model:** Brazilian geological basin and field names (Pré-Sal, Campos, Santos) are classified as `LOC`/`GPE` by the Portuguese model. The English `en_core_web_lg` misclassifies them as `PERSON`, producing false positives that redact core O&G terminology.
+
+### Zero-Trace Compliance Logging
+
+> **How it works:** `AuditService.log()` computes `SHA-256(rawPrompt)` and stores only the hash in `restriction_audit_log.query_hash`. The raw prompt string is passed in, hashed, and immediately discarded — it is never written to any database column, log stream, or audit record. The hash is sufficient to prove a specific query was submitted (by providing the plaintext for hash verification) without exposing the prompt content at rest.
+>
+> **Rate limiting:** `POST /api/chat` and `POST /api/chat/verify` share a Bucket4j in-memory token bucket of 20 requests per minute per `sub` JWT claim. Exceeding the limit returns HTTP 429. The rate limiter is keyed to the authenticated identity, not the IP address.
+
+---
+
+## Under-the-Hood Architecture
+
+The diagram below traces a complete user request from browser to response, including both the fast path (text-only chat) and the ephemeral document verification path.
 
 ```mermaid
 flowchart TD
@@ -94,38 +176,26 @@ flowchart TD
 
 ---
 
-## Tech Stack
+## Technical Stack & Specifications
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Angular 17 (standalone) + Angular Material 17 |
-| Backend | Spring Boot 3.3 / Java 21 |
-| Identity | Auth0 (free tier, cloud) |
-| Vector DB | Qdrant 1.9 (Docker) |
-| App DB | Neon (serverless PostgreSQL) |
-| LLM | Claude `claude-sonnet-4-6` via Anthropic Messages API |
-| Ingestion | Python 3.11 · sentence-transformers `all-MiniLM-L6-v2` · 384-dim vectors |
-| DLP | Python 3.11 · FastAPI · Microsoft Presidio · spaCy `pt_core_news_lg` |
-| Rate Limiting | Bucket4j 8.10 (20 req/min per user, in-memory token buckets) |
-
----
-
-## Prerequisites
-
-| Requirement | Notes |
-|-------------|-------|
-| Docker Desktop | Runs Qdrant, backend, frontend, ingestion, DLP |
-| Java 21 | Only needed for local backend development outside Docker |
-| Python 3.11 | Only needed for local ingestion/DLP development outside Docker |
-| [Neon account](https://neon.tech) | Free tier — create one database: `fga_registry` |
-| [Auth0 account](https://auth0.com) | Free tier — SPA application + custom API |
-| Anthropic API key | Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| Layer | Technology | Notes |
+|---|---|---|
+| **Frontend** | Angular 17 (standalone) + Angular Material 17 | Auth0 OIDC via `@auth0/auth0-angular`; Markdown rendered through `marked` + DOMPurify (`SafeMarkdownPipe`) |
+| **Backend** | Spring Boot 3.3 / Java 21 | `RagService.chat()` is deliberately non-`@Transactional` — HikariCP pool size 5 (Neon free tier); all external HTTP calls run outside any transaction boundary |
+| **Identity** | Auth0 (cloud, free tier) | Post-Login Action injects O&G roles into `https://enpsecurechat.com/roles` JWT claim; `OgRolesAndGroupExtractor` maps to Spring `ROLE_` authorities |
+| **Vector DB** | Qdrant 1.9 | FGA enforced via `must_not` filter on `ancestor_paths` payload at query time; 384-dim collection; Docker locally, Qdrant Cloud on GCP |
+| **Relational Store** | Neon (serverless PostgreSQL) | Hosts `fga_registry` DB: FGA restriction table, conversation/message history, SHA-256 audit log |
+| **LLM Engine** | Claude `claude-sonnet-4-6` via Anthropic Messages API | 1024 `max_tokens` for chat; 2048 for document verification; model configurable via `CLAUDE_MODEL` env var |
+| **Ingestion Pipeline** | Python 3.11 · FastAPI · sentence-transformers | `all-MiniLM-L6-v2` embedder; LangChain `RecursiveCharacterTextSplitter` (512 tok / 64 overlap); parsers: pdfminer + pytesseract (OCR), openpyxl/xlrd, Pillow |
+| **Compliance / DLP** | Python 3.11 · FastAPI · Microsoft Presidio · spaCy `pt_core_news_lg` | 8 custom O&G recognizers; internal Docker network only — no public port; Portuguese NLP model to correctly classify Brazilian basin/field names |
+| **Rate Limiting** | Bucket4j 8.10 | 20 req/min per `sub` claim; in-memory token buckets; shared across `/api/chat` and `/api/chat/verify` |
+| **Infrastructure** | Docker Compose (local) · GCP Cloud Run (production) | Scale-to-zero on Cloud Run; ANP crawler runs as a scheduled Cloud Run Job |
 
 ---
 
 ## Quick Start
 
-### 1. Clone and configure
+### 1. Configure credentials
 
 ```bash
 git clone <repo-url>
@@ -133,19 +203,19 @@ cd Enterprise-SecureChat
 cp infra/.env.example infra/.env
 ```
 
-Edit `infra/.env` and fill in:
+Edit `infra/.env` with your Neon JDBC URL, Auth0 tenant settings, Anthropic API key, and Qdrant credentials:
 
 ```env
 SPRING_DATASOURCE_URL=jdbc:postgresql://ep-xxxx.region.aws.neon.tech/fga_registry?sslmode=require&user=xxx&password=xxx
 AUTH0_ISSUER_URI=https://dev-xxx.us.auth0.com/
 AUTH0_AUDIENCE=api.enpsecurechat.com
 ANTHROPIC_API_KEY=sk-ant-api03-...
-QDRANT_API_KEY=your-local-qdrant-key
+QDRANT_API_KEY=your-qdrant-key
 ```
 
 ### 2. Apply the database schema
 
-Open the Neon SQL Editor for your `fga_registry` database and paste the contents of `infra/migrations/init.sql`. This creates the FGA registry tables, conversation/message history, audit log, and seeds the five default roles.
+Open the Neon SQL Editor for your `fga_registry` database and paste the contents of `infra/migrations/init.sql`. This creates the FGA registry tables, conversation history, SHA-256 audit log, and seeds the five default O&G roles.
 
 ### 3. Start all services
 
@@ -154,382 +224,53 @@ cd infra
 docker compose up -d
 ```
 
-Services come up in this order (Docker healthchecks handle dependencies):
-
-| Service | URL | Notes |
-|---------|-----|-------|
+| Service | Endpoint | Role |
+|---|---|---|
+| Frontend | http://localhost:4200 | Angular SPA (nginx) |
+| Backend | http://localhost:3000 | Spring Boot API gateway |
 | Qdrant | http://localhost:6333 | Vector DB + dashboard |
 | DLP | internal only | `dlp-service:8000` on backend network |
-| Backend | http://localhost:3000 | Spring Boot |
-| Frontend | http://localhost:4200 | Angular (served via nginx) |
 
-### 4. Create users in Auth0
-
-1. Go to your [Auth0 dashboard](https://manage.auth0.com) → **User Management → Users → Create User**
-2. Create test users (e.g. `admin-user@enpsecurechat.com`, `employee@enpsecurechat.com`)
-3. Go to **User Management → Roles**, create the O&G roles (`admin`, `employee`, `bu-user`, etc.)
-4. Assign roles to each user via **User Management → Users → [user] → Roles**
-5. Ensure the **Post-Login Action** is deployed to inject roles into the `https://enpsecurechat.com/roles` JWT claim (see `docs/cloud.md`)
-
-### 5. Index documents
+### 4. Index the baseline document corpus
 
 ```bash
-# One-shot ingest (ingestion service is already running as part of docker compose up -d)
+# Runs one-shot against the persistent ingestion service started in step 3
 cd infra
 docker compose run --rm ingestion \
   python -m src.main --manifest manifests/og-manifest.yaml
 ```
 
-The O&G manifest indexes reserves documents under `bu/<name>/reserves` and regulatory content under `bar-questions`. Add new documents by creating entries in `og-manifest.yaml` with the appropriate `subject_path`.
+This indexes the BU reserves documents under `bu/<name>/reserves` and regulatory content under `bar-questions`. The operation is fully idempotent — re-running never creates duplicate vectors.
 
-### 6. Start chatting
-
-Open http://localhost:4200 — you will be redirected to the Auth0 Universal Login. After authenticating, the chat interface is immediately available.
-
----
-
-## Managing Restrictions
-
-### Via the Admin Panel (recommended)
-
-Log in as a user with the `admin` role and navigate to **Admin** in the top bar. The panel shows:
-
-- **FGA Restriction Matrix** — all active path restrictions per role, with a delete button for each
-- **Add Restriction** — role selector, subject path input, optional reason
-- **Audit Log** — paginated table of every query that triggered FGA filtering
-
-### Via the API
+### 5. Populate the ANP regulatory knowledge base (optional)
 
 ```bash
-# List all roles and their restrictions
-curl -H "Authorization: Bearer <admin-jwt>" http://localhost:3000/api/admin/roles
-
-# Add a restriction: block reservoir-team from bar-questions
-curl -X POST \
-  -H "Authorization: Bearer <admin-jwt>" \
-  -H "Content-Type: application/json" \
-  -d '{"subjectPath":"bar-questions","reason":"Confidential regulatory content"}' \
-  http://localhost:3000/api/admin/roles/reservoir-team/restrictions
-
-# Remove the restriction
-curl -X DELETE \
-  -H "Authorization: Bearer <admin-jwt>" \
-  "http://localhost:3000/api/admin/roles/reservoir-team/restrictions?subjectPath=bar-questions"
-```
-
-Changes apply to the **next** query — the FGA filter is built at request time from the database, not cached.
-
----
-
-## Adding Documents
-
-There are two ways to get documents into the knowledge base. Both paths are fully idempotent — re-running never creates duplicate vectors.
-
-### Option A — Static manifest (company BU documents)
-
-Create a YAML manifest:
-
-```yaml
-collection: enterprise_knowledge
-documents:
-  - path: data/bu/santos/reserves/san-field-update.pdf
-    subject_path: bu/santos/reserves
-
-  - path: data/bu/campos/reserves/alb-field-update.pdf
-    subject_path: bu/campos/reserves
-
-  - path: data/regulatory/bar-questions/anp-2026-audit.txt
-    subject_path: bar-questions
-```
-
-Run ingestion:
-
-```bash
-docker compose run --rm ingestion \
-  python -m src.main --manifest manifests/your-manifest.yaml
-```
-
-### Option B — ANP Regulatory Crawler (automated)
-
-`ingestion/src/crawler.py` discovers and indexes content from the ANP Exploração e Produção portal automatically. It supports three modes via the `--mode` flag:
-
-| Mode | What is indexed |
-|---|---|
-| `files` (default) | PDF, XLSX, XLS file downloads |
-| `html` | Editorial text extracted from ANP HTML pages |
-| `all` | Both files and HTML pages |
-
-```bash
-# Run via Docker (recommended — uses same network as ingestion service)
+# Index PDF/XLSX/XLS files from the ANP E&P portal
 docker compose run --rm \
   -e INGEST_URL=http://ingestion:8001/ingest \
   ingestion python -m src.crawler
 
-# Index HTML page text only
-docker compose run --rm \
-  -e INGEST_URL=http://ingestion:8001/ingest \
-  ingestion python -m src.crawler --mode html
-
-# Index both files and HTML pages
+# Also index HTML page text (recommended for complete regulatory coverage)
 docker compose run --rm \
   -e INGEST_URL=http://ingestion:8001/ingest \
   ingestion python -m src.crawler --mode all
-
-# Run locally (ingestion service must be running separately)
-INGEST_URL=http://localhost:8001/ingest python -m src.crawler --mode all
 ```
 
-**How it works (files mode):**
+The crawler maintains a SHA-256 state file — subsequent runs skip unchanged content in ~0.5 s per file via HEAD-only size probes.
 
-1. BFS crawl of `gov.br/anp/pt-br/assuntos/exploracao-e-producao-de-oleo-e-gas` up to depth 2 — discovers all sub-pages in the ANP E&P section.
-2. Collects all `.pdf`, `.xlsx`, and `.xls` links across all pages (de-duplicated).
-3. For files already recorded in `ingestion/data/.crawler_state.json`, sends a HEAD request to check `Content-Length`. If the size matches what was stored, the file is skipped immediately — no download needed. If the size differs (or the server omits `Content-Length`), the file is downloaded and its SHA-256 hash is compared before deciding whether to re-ingest.
-4. Routes each file to the correct `subject_path`:
-   - URL contains `reserva`, `recursos`, or `bar` → `bar-questions`
-   - Everything else → `corporate-answers`
-5. POSTs the file to the `/ingest` endpoint, which parses, chunks, embeds, and upserts to Qdrant.
-6. Saves the state file so subsequent runs only process new or changed documents.
+### 6. Open the application
 
-**How it works (html mode):**
-
-1. Same BFS crawl collects all pages up to depth 2.
-2. For each page, extracts editorial text using Plone CMS selectors (`#content-core`, `.documentContent`, `#region-content`, `main`) and strips nav/footer boilerplate.
-3. Prepends the page's breadcrumb trail as `Categoria: X > Y > Z` so every Qdrant chunk carries its site-hierarchy context (aids retrieval precision).
-4. Pages where the extracted body is under 80 characters (thin pointer pages or JS-rendered accordions) are skipped.
-5. SHA-256 of the **extracted text** (not raw HTML) is stored under the key `html::{slug}` in the state file — nav-chrome changes on gov.br do not trigger re-ingests.
-6. POSTs as a `.txt` file to `/ingest` under `subject_path: corporate-answers`.
-
-**Supported content:** `.pdf` (OCR fallback for scanned pages), `.xlsx`, `.xls`, HTML page text (as `.txt`)
-
-**Rate limiting:** 3-second pause between full file downloads / page fetches. HEAD-only skip probes use a 0.5-second pause — already-indexed runs complete in minutes rather than hours.
-
-**Stopping mid-run is safe** — documents already ingested before the interruption are live in Qdrant immediately. The state file is written after each successful ingest, so only unrecorded files are retried on the next run.
-
-If the crawler is rebuilt (e.g. after updating parsers), restart the persistent ingestion container before running it:
-
-```bash
-cd infra
-docker compose up -d --no-deps ingestion   # picks up new image
-docker compose run --rm -e INGEST_URL=http://ingestion:8001/ingest ingestion python -m src.crawler --mode all
-```
+Navigate to http://localhost:4200. Auth0 Universal Login handles authentication. After login, role-based FGA restrictions are active immediately — no restart required. Add or modify restrictions via the **Admin** panel (requires the `admin` role).
 
 ---
 
-## Security Deep Dive
+## Role Reference
 
-### FGA: The `ancestor_paths` Guarantee
-
-The core FGA trick lives in Qdrant's payload, not in application code. When a document at `finance/payroll/q3` is ingested, its `ancestor_paths` field is written as:
-
-```json
-["finance", "finance/payroll", "finance/payroll/q3"]
-```
-
-When `FgaService.buildQdrantFilter(["finance"])` runs, it produces:
-
-```json
-{
-  "must_not": [
-    { "key": "ancestor_paths", "match": { "any": ["finance"] } }
-  ]
-}
-```
-
-This single filter, applied **at the Qdrant search layer**, excludes every document that lists `"finance"` in its `ancestor_paths` — which is every document at `finance/*`, no matter how deep. Restricting a parent path blocks all descendants **mathematically**, without any recursive application-level logic.
-
-There is no code path to `/api/chat` that bypasses this filter. The filter is built in `FgaService` and passed directly to `QdrantSearchClient.search()`. Spring Security's `@PreAuthorize` annotations prevent non-admin users from modifying restrictions.
-
-### DLP: Why Blocking (Non-Streaming)
-
-The `/api/chat` endpoint waits for Claude to finish generating the complete response before calling the DLP service. This is intentional:
-
-Presidio's NER models (spaCy `en_core_web_lg`) require full sentence context to accurately detect named entities. Streaming token-by-token breaks entity detection at sentence boundaries — e.g., a person's name split across two chunks may not be flagged.
-
-The DLP service uses `pt_core_news_lg` (Portuguese spaCy model) so Brazilian geological/basin names are correctly classified as locations rather than people. It redacts the following entity types:
-
-| Entity type | What it catches | Example |
+| Role | Access Scope | Can Upload Documents |
 |---|---|---|
-| `PERSON` | Personal names (score ≥ 0.75, org acronyms allowlisted) | "João Silva" |
-| `EMAIL_ADDRESS` | Email addresses | joao@empresa.com |
-| `PHONE_NUMBER` | Phone numbers | +55 11 99999-9999 |
-| `CREDIT_CARD` | Credit card numbers | 4111 1111 1111 1111 |
-| `DATE_TIME` | Document dates (via spaCy NER) | 31/12/2035 |
-| `FINANCIAL_FIGURE` | Currency amounts + bare comma-grouped numbers | R$125.000, 450,000 |
-| `OG_VOLUMES` | Reserve/production volumes with unit markers | 450 MMboe, 3.2 bbl/d, 1,200 bbl |
-| `ANP_PROCESS` | Official letter and process numbers | Ofício Nº 402/2026, Processo 48500.0012/2025-31 |
-| `RESERVES_VARIATION` | Signed reserve variation percentages and recovery factor | +4.2% variação, fator de recuperação: 28% |
-| `INVESTMENT_YEAR` | Year numbers in investment context; year ranges near investment keywords | investimento em 2027, CAPEX 2028, 2025 a 2031 |
-| `OG_CONTRACT` | Contract end dates/years, economic limits, Cessão Onerosa data | prazo do contrato: 31/12/2035, limite econômico: 150 bbl/d |
-| `COMMODITY_PRICE` | Barrel and natural-gas sales prices | 70 USD/bbl, preço do barril: 65, $2.50/MMBtu |
-
-All patterns are bilingual (PT + EN) unless the entity is unit-anchored (e.g., `/bbl`, `MMBtu`), in which case the unit itself makes language irrelevant.
-
-### Document Verification
-
-The paperclip button in the chat input opens a file picker. After attaching a file, send your question as normal — the backend routes the request through `POST /api/chat/verify` instead of `POST /api/chat`.
-
-**How it works:**
-
-1. The file is sent to the ingestion service's `POST /parse` endpoint, which runs the appropriate parser (PDF/Excel/image/text) and returns raw text.
-2. The raw text is injected into Claude's system prompt alongside the RAG chunks from the knowledge base.
-3. Claude compares the submitted document against the verified ground truth and flags discrepancies.
-4. The full DLP pass runs on Claude's response — any PII or financial figures in the compliance report are redacted before reaching the browser.
-5. Only `message + "[Attached: filename]"` is stored in conversation history. The document text is never persisted.
-
-**Supported file types:** `.pdf`, `.xlsx`, `.xls`, `.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif`, `.txt`, `.md`, `.csv`
-
-**Token budget:** The verify endpoint requests `max_tokens=2048` from Claude (vs 1024 for regular chat) to ensure full compliance reports are not truncated.
-
----
-
-### Rate Limiting
-
-`POST /api/chat` and `POST /api/chat/verify` share the same **20 requests per minute per user** (`sub` JWT claim) bucket. Bucket4j uses in-memory token buckets refilled in full every 60 seconds. Exceeding the limit returns HTTP 429 with:
-
-```json
-{ "error": "Rate limit exceeded. Maximum 20 requests per minute." }
-```
-
-### Security Headers
-
-Every response from the backend includes:
-
-| Header | Value |
-|--------|-------|
-| `Content-Security-Policy` | `default-src 'self'; frame-ancestors 'none'` (+ script/style/img/connect) |
-| `X-Frame-Options` | `DENY` |
-| `X-Content-Type-Options` | `nosniff` |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` |
-
-### Audit Log Integrity
-
-`AuditService.log()` stores `SHA-256(prompt)` in `restriction_audit_log.query_hash`. The raw prompt text never touches the database. This satisfies audit requirements (queries can be proven to have occurred) without storing potentially sensitive prompt content.
-
----
-
-## Development Guide
-
-### Backend (Java 21)
-
-```bash
-cd backend
-mvn spring-boot:run          # dev server on :3000
-mvn test                     # run JUnit 5 tests
-mvn package -DskipTests      # build JAR
-```
-
-**Key design constraint:** `RagService.chat()` is deliberately **not** `@Transactional`. External HTTP calls (embed ~5 s, Qdrant ~10 s, Claude ~60 s) happen inside this method. Annotating it `@Transactional` would hold a HikariCP connection for the entire duration — with `maximum-pool-size=5` (Neon free tier limit), five concurrent users would exhaust the pool.
-
-### Frontend (Angular 17)
-
-```bash
-cd frontend
-npm install
-npm start                    # dev server on :4200 with /api proxy to :3000
-npm run build                # production build → dist/.../browser/
-npm test                     # Jest unit tests
-```
-
-### DLP Service (Python)
-
-```bash
-cd dlp-service
-pip install -r requirements.txt
-python -m spacy download pt_core_news_lg
-uvicorn src.main:app --host 0.0.0.0 --port 8000   # dev server
-pytest tests/                                        # run DLP tests
-```
-
-### Ingestion Pipeline (Python)
-
-```bash
-cd ingestion
-pip install -r requirements.txt
-python -m src.main --manifest manifests/example-manifest.yaml   # one-shot ingest
-uvicorn src.embed_api:app --host 0.0.0.0 --port 8001            # persistent embed API
-INGEST_URL=http://localhost:8001/ingest python -m src.crawler    # ANP crawler (service must be up)
-pytest tests/                                                     # run ingestion tests
-```
-
----
-
-## Project Structure
-
-```
-Enterprise-SecureChat/
-├── backend/src/main/java/com/enterprise/securechat/
-│   ├── admin/          AdminController (CRUD + audit log, admin-only)
-│   ├── audit/          RestrictionAuditLog entity + AuditService (SHA-256)
-│   ├── config/         SecurityConfig, RateLimitFilter, RestClientConfig
-│   ├── conversation/   Conversation + Message entities, ConversationService
-│   ├── fga/            FgaService, Role/RoleRestriction entities + repos
-│   ├── health/         HealthController
-│   ├── rag/            RagService, ClaudeService, ParseClient, EmbedClient,
-│   │                   QdrantSearchClient, DlpClient, dto/
-│   └── security/       OgRolesAndGroupExtractor (Auth0 roles claim → ROLE_)
-├── backend/src/test/java/com/enterprise/securechat/
-│   ├── fga/            FgaServiceTest (filter structure, hierarchy)
-│   └── rag/            RagServiceTest (orchestration, DLP wiring, FGA flag)
-├── dlp-service/src/
-│   ├── main.py         FastAPI: POST /dlp/analyze
-│   ├── analyzer.py     Presidio engines (module-level singletons)
-│   └── custom_recognizers/
-│       ├── financial_figures.py   FINANCIAL_FIGURE — currency-marked amounts
-│       └── og_rules.py            OG_VOLUMES, ANP_PROCESS, RESERVES_VARIATION, INVESTMENT_YEAR, OG_CONTRACT, COMMODITY_PRICE
-├── dlp-service/tests/
-│   ├── test_financial_recognizer.py
-│   └── test_og_recognizers.py
-├── frontend/src/app/
-│   ├── core/auth/      auth.interceptor.ts, auth.guard.ts (Auth0)
-│   ├── core/services/  chat.service.ts, admin.service.ts
-│   ├── features/chat/  ChatComponent
-│   ├── features/admin/ AdminComponent (restriction matrix, add form, audit log)
-│   └── shared/pipes/   SafeMarkdownPipe (marked → DOMPurify → SafeHtml)
-├── ingestion/src/
-│   ├── parsers/        pdf_parser (OCR fallback), excel_parser (xlsx + xls), image_parser (OCR por+eng)
-│   ├── chunker.py      512-token chunks / 64-token overlap
-│   ├── embedder.py     all-MiniLM-L6-v2 (384-dim)
-│   ├── qdrant_writer.py  upsert + delete_by_doc_id (idempotent)
-│   ├── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse, POST /ingest (2 pre-forked workers)
-│   └── crawler.py      ANP E&P portal BFS scraper — depth 2, SHA-256 state, --mode files/html/all
-├── ingestion/tests/
-│   ├── test_chunker.py
-│   └── test_qdrant_writer.py
-├── infra/
-│   ├── docker-compose.yml
-│   ├── migrations/init.sql
-│   └── .env.example
-└── docs/
-    ├── plan.md · spec.md · cloud.md · mermaid.md
-```
-
----
-
-## Environment Variables Reference
-
-| Variable | Service | Description |
-|----------|---------|-------------|
-| `SPRING_DATASOURCE_URL` | backend | JDBC URL for `fga_registry` Neon DB |
-| `AUTH0_ISSUER_URI` | backend | Auth0 tenant URL, e.g. `https://dev-xxx.us.auth0.com/` |
-| `AUTH0_AUDIENCE` | backend | Auth0 API identifier, e.g. `api.enpsecurechat.com` |
-| `ANTHROPIC_API_KEY` | backend | Anthropic API key |
-| `QDRANT_API_KEY` | backend, ingestion | Qdrant auth key |
-| `QDRANT_URL` | backend, ingestion | Default: `http://qdrant:6333` |
-| `CRAWLER_MODE` | ingestion | Crawler mode when triggered via `/crawl` API: `files` (default), `html`, or `all` |
-
-All variables are documented in `infra/.env.example`.
-
----
-
-## Roles
-
-| Role | Intended for |
-|------|-------------|
-| `admin` | Full access + admin panel |
-| `employee` | General company documents |
-| `bu-user` | BU-scoped reserves documents (sees only own BU path) |
-| `reserves-management` | Cross-BU reserves access, can upload to index |
-| `reserves-coordination` | Cross-BU access including `bar-questions`; can upload to index |
-| `reservoir-team` | Reservoir engineering — read-only, blocked from `bar-questions` |
+| `admin` | Unrestricted + admin panel | — |
+| `employee` | General company knowledge base | No |
+| `bu-user` | Own BU path only (`bu/<name>/reserves`) | Yes |
+| `reserves-management` | Cross-BU reserves access | Yes |
+| `reserves-coordination` | Cross-BU reserves + `bar-questions` regulatory | Yes |
+| `reservoir-team` | Reservoir engineering read-only; blocked from `bar-questions` | No |
