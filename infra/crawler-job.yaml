@@ -1,0 +1,49 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: anp-crawler-job
+  namespace: '196884581650'
+  annotations:
+    run.googleapis.com/client-name: gcloud
+    run.googleapis.com/client-version: 571.0.0
+  labels:
+    cloud.googleapis.com/location: us-east4
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/client-name: gcloud
+        run.googleapis.com/client-version: 571.0.0
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          containers:
+          - args:
+            - -m
+            - src.crawler
+            command:
+            - python
+            env:
+            - name: INGEST_URL
+              value: https://securechat-ingestion-ik6im6ikgq-uk.a.run.app/ingest
+            - name: CRAWLER_MODE
+              value: html
+            image: us-east4-docker.pkg.dev/enp-securechat/securechat-repo/securechat-ingestion:latest
+            resources:
+              limits:
+                cpu: 1000m
+                memory: 512Mi
+            volumeMounts:
+            - mountPath: /app/data
+              name: crawler-state
+          volumes:
+          - csi:
+              driver: gcsfuse.run.googleapis.com
+              volumeAttributes:
+                bucketName: enp-securechat-crawler-state
+            name: crawler-state
+          maxRetries: 1
+          serviceAccountName: 196884581650-compute@developer.gserviceaccount.com
+          timeoutSeconds: '3600'

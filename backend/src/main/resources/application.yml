@@ -56,10 +56,12 @@ qdrant:
 embed-service:
   url: ${EMBED_SERVICE_URL:http://ingestion:8001}
   connect-timeout: 2000
-  read-timeout: 5000
+  read-timeout: 90000   # sentence-transformers cold start takes ~60 s on Cloud Run scale-to-zero
 
 dlp-service:
   url: ${DLP_SERVICE_URL:http://dlp-service:8000}
+  connect-timeout: 2000
+  read-timeout: 60000   # spaCy + Presidio cold start takes ~30 s on Cloud Run scale-to-zero
 
 anthropic:
   api-key: ${ANTHROPIC_API_KEY}

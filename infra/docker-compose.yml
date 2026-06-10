@@ -11,37 +11,6 @@ volumes:
 
 services:
 
-  # ── Keycloak ── Identity / OIDC emulating AD+IIQ
-  # Backed by Neon (NEON_KEYCLOAK_URL in .env)
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: securechat-keycloak
-    restart: unless-stopped
-    command: start --import-realm
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: ${NEON_KEYCLOAK_URL}
-      KC_DB_SCHEMA: keycloak
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      KC_HOSTNAME_STRICT: "false"
-      KC_HTTP_ENABLED: "true"
-      KC_PROXY: "edge"
-      KC_CACHE: "local"
-    volumes:
-      - ./keycloak:/opt/keycloak/data/import:ro
-    ports:
-      - "8080:8080"
-    networks:
-      - internal
-      - frontend-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/realms/master || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 90s
-
   # ── Qdrant ── Vector database with metadata filtering
   qdrant:
     image: qdrant/qdrant:v1.9.0
@@ -116,8 +85,6 @@ services:
     env_file:
       - .env
     environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: enterprise-securechat
       QDRANT_URL: ${QDRANT_URL}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       QDRANT_COLLECTION: enterprise_knowledge
@@ -126,8 +93,6 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       CLAUDE_MODEL: claude-sonnet-4-6
     depends_on:
-      keycloak:
-        condition: service_started
       qdrant:
         condition: service_started
     ports:
@@ -150,6 +115,8 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    volumes:
+      - ./nginx.local.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "4200:80"
     networks:

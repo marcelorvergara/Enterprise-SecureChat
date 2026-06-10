@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gcloud logging *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://securechat-backend-ik6im6ikgq-uk.a.run.app/api/conversations\")",
+      "Bash(gcloud builds *)",
+      "Bash(python3 -c \"import json,sys; env=json.load\\(sys.stdin\\)['spec']['template']['spec']['containers'][0]['env']; [print\\(e['name'],'=',e.get\\('value','<secret>'\\)\\) for e in env]\")",
+      "Bash(gcloud artifacts *)"
+    ]
+  }
+}

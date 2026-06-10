@@ -44,9 +44,11 @@ public class RestClientConfig {
 
     @Bean("dlpRestClient")
     public RestClient dlpRestClient(
-            @Value("${dlp-service.url}") String dlpUrl) {
+            @Value("${dlp-service.url}") String dlpUrl,
+            @Value("${dlp-service.connect-timeout}") int connectTimeout,
+            @Value("${dlp-service.read-timeout}") int readTimeout) {
         return RestClient.builder()
-                .requestFactory(factory(2_000, 5_000))
+                .requestFactory(factory(connectTimeout, readTimeout))
                 .baseUrl(dlpUrl)
                 .build();
     }
