@@ -274,3 +274,23 @@ Navigate to http://localhost:4200. Auth0 Universal Login handles authentication.
 | `reserves-management` | Cross-BU reserves access | Yes |
 | `reserves-coordination` | Cross-BU reserves + `bar-questions` regulatory | Yes |
 | `reservoir-team` | Reservoir engineering read-only; blocked from `bar-questions` | No |
+
+---
+
+## Security Trade-offs & Residual Risks
+
+The three-layer security mesh (FGA + DLP + audit log) is strong on the _output_ side — what users see is tightly controlled. The following residual risks exist on the _input_ side of the LLM call and are documented here to set accurate expectations for any deployment.
+
+| Risk | Real? | Mitigation in place |
+|---|---|---|
+| **Raw document chunks sent to Anthropic API** | Yes | Anthropic's [enterprise data processing agreement](https://www.anthropic.com/legal/privacy) prohibits training on API input. Shifting DLP left (redacting before sending to Claude) is architecturally possible but would break RAG retrieval quality — the financial figures and reserve volumes being redacted are the primary query targets for authorized users. |
+| **Qdrant stores unredacted text** | Yes | Qdrant API key required for all operations; the `qdrant` container is on an isolated Docker network with no public port. On GCP, Qdrant Cloud enforces API key auth over TLS. If Qdrant is compromised, raw chunk text is exposed. |
+| **Spring Boot HTTP client logging** | Mitigated | `org.springframework.web.client` is pinned to `WARN` in `application.yml`. At `DEBUG`, Spring's `RestClient` emits request headers — which would expose the `x-api-key` sent to Anthropic. `SimpleClientHttpRequestFactory` does not buffer or log request/response bodies at any log level. |
+
+### Why pre-LLM redaction is not the fix
+
+Shifting DLP left — redacting chunks before packaging the Claude prompt — sounds like the right answer but defeats the system's purpose. An authorized `reserves-management` user querying barrel prices would receive a response grounded in `[REDACTED]` context, producing useless output. The FGA layer already governs _who_ can reach _which_ documents; DLP governs what leaks into the _final answer_ regardless of authorization level.
+
+### Alternative: keep data inside your cloud boundary
+
+If sending raw text to Anthropic's API is unacceptable under your organization's data classification policy, the lowest-disruption alternative is routing Claude calls through **AWS Bedrock** or **GCP Vertex AI** (both offer Claude models). The API call stays within your chosen cloud region under that provider's enterprise data agreements, and the only code change required is the base URL and auth headers in `RestClientConfig.java`.
