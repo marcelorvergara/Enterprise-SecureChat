@@ -222,11 +222,15 @@ def discover_links(page_url: str) -> list[tuple[str, str]]:
     return results
 
 
-def collect_pages(root_url: str, max_depth: int = 2) -> list[str]:
-    """BFS from root_url up to max_depth levels, staying inside the ANP E&P section."""
+def collect_pages(root_url: str, max_depth: int = 2) -> list[tuple[str, int]]:
+    """BFS from root_url up to max_depth levels, staying inside the ANP E&P section.
+
+    Returns (url, depth) pairs so callers can filter by depth independently for
+    HTML and file passes.
+    """
     visited: set[str] = {root_url}
     queue: list[tuple[str, int]] = [(root_url, 0)]
-    ordered: list[str] = [root_url]
+    ordered: list[tuple[str, int]] = [(root_url, 0)]
 
     while queue:
         page_url, depth = queue.pop(0)
@@ -235,7 +239,7 @@ def collect_pages(root_url: str, max_depth: int = 2) -> list[str]:
         for subpage in discover_subpages(page_url):
             if subpage not in visited:
                 visited.add(subpage)
-                ordered.append(subpage)
+                ordered.append((subpage, depth + 1))
                 queue.append((subpage, depth + 1))
         time.sleep(RATE_LIMIT_SECONDS)
 
@@ -425,9 +429,9 @@ def extract_page_text(soup: BeautifulSoup) -> str | None:
 
 # ── Main crawl loop ────────────────────────────────────────────────────────────
 
-def run(mode: str = "files") -> None:
+def run(mode: str = "files", max_depth_html: int = 4, max_depth_files: int = 2) -> None:
     try:
-        _run(mode)
+        _run(mode, max_depth_html=max_depth_html, max_depth_files=max_depth_files)
     except KeyboardInterrupt:
         print("[crawler] Interrupted — state was saved up to last completed file")
     except Exception as exc:
@@ -436,19 +440,29 @@ def run(mode: str = "files") -> None:
         traceback.print_exc()
 
 
-def _run(mode: str = "files") -> None:
-    print(f"[crawler] Starting ANP crawl — target: {ANP_URL} — mode: {mode}")
+def _run(mode: str = "files", max_depth_html: int = 4, max_depth_files: int = 2) -> None:
+    print(
+        f"[crawler] Starting ANP crawl — target: {ANP_URL} — mode: {mode} "
+        f"— depth html≤{max_depth_html} files≤{max_depth_files}"
+    )
     state = _load_state()
     new_count = updated_count = skipped_count = 0
 
     try:
-        pages_to_crawl = collect_pages(ANP_URL, max_depth=2)
-        print(f"[crawler] Crawling {len(pages_to_crawl)} page(s) total (depth ≤ 2)")
+        # Single BFS up to the deeper of the two limits; each pass filters to its own limit.
+        effective_max = max_depth_html if mode == "html" else (
+            max_depth_files if mode == "files" else max(max_depth_html, max_depth_files)
+        )
+        all_pages = collect_pages(ANP_URL, max_depth=effective_max)
+        print(f"[crawler] Discovered {len(all_pages)} page(s) total (depth ≤ {effective_max})")
+
+        html_pages = [url for url, d in all_pages if d <= max_depth_html]
+        file_pages  = [url for url, d in all_pages if d <= max_depth_files]
 
         # ── HTML pass ─────────────────────────────────────────────────────────
         if mode in ("html", "all"):
-            print(f"[crawler] HTML pass — {len(pages_to_crawl)} page(s)")
-            for page_url in pages_to_crawl:
+            print(f"[crawler] HTML pass — {len(html_pages)} page(s) (depth ≤ {max_depth_html})")
+            for page_url in html_pages:
                 slug = url_to_slug(page_url)
                 state_key = f"html::{slug}"
 
@@ -489,7 +503,8 @@ def _run(mode: str = "files") -> None:
             # multiple pages is only downloaded once.
             seen_urls: set[str] = set()
             all_links: list[tuple[str, str]] = []
-            for page_url in pages_to_crawl:
+            print(f"[crawler] Files pass — scanning {len(file_pages)} page(s) (depth ≤ {max_depth_files})")
+            for page_url in file_pages:
                 for url, filename in discover_links(page_url):
                     if url not in seen_urls:
                         seen_urls.add(url)
@@ -583,12 +598,33 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode",
         choices=["files", "html", "all"],
-        default="files",
+        default=os.getenv("CRAWLER_MODE", "files"),
         help=(
             "files: download PDFs/XLSX only (default, backwards-compatible); "
             "html: extract and index HTML page text only; "
-            "all: both HTML pages and file downloads"
+            "all: both HTML pages and file downloads. "
+            "Defaults to CRAWLER_MODE env var, then 'files'."
+        ),
+    )
+    parser.add_argument(
+        "--max-depth-html",
+        type=int,
+        default=int(os.getenv("CRAWLER_MAX_DEPTH_HTML", "4")),
+        dest="max_depth_html",
+        help=(
+            "BFS depth limit for HTML page extraction (default 4). "
+            "Defaults to CRAWLER_MAX_DEPTH_HTML env var."
+        ),
+    )
+    parser.add_argument(
+        "--max-depth-files",
+        type=int,
+        default=int(os.getenv("CRAWLER_MAX_DEPTH_FILES", "2")),
+        dest="max_depth_files",
+        help=(
+            "BFS depth limit for file (PDF/XLSX) discovery (default 2). "
+            "Defaults to CRAWLER_MAX_DEPTH_FILES env var."
         ),
     )
     args = parser.parse_args()
-    run(args.mode)
+    run(args.mode, max_depth_html=args.max_depth_html, max_depth_files=args.max_depth_files)

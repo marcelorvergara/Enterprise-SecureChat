@@ -30,6 +30,10 @@ spec:
               value: https://securechat-ingestion-ik6im6ikgq-uk.a.run.app/ingest
             - name: CRAWLER_MODE
               value: html
+            - name: CRAWLER_MAX_DEPTH_HTML
+              value: '4'
+            - name: CRAWLER_MAX_DEPTH_FILES
+              value: '2'
             image: us-east4-docker.pkg.dev/enp-securechat/securechat-repo/securechat-ingestion:latest
             resources:
               limits:
