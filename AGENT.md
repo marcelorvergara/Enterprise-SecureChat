@@ -363,50 +363,15 @@ Workflows live in `.github/workflows/`. Each triggers only on path-filtered push
 
 | Secret | Used by | How to obtain |
 |---|---|---|
-| `WIF_PROVIDER` | backend, ingestion, dlp, crawler | See WIF setup below |
-| `WIF_SERVICE_ACCOUNT` | backend, ingestion, dlp, crawler | See WIF setup below |
-| `FIREBASE_SERVICE_ACCOUNT_ENP_SECURECHAT` | frontend | Run `firebase init hosting:github` — it creates the secret automatically |
+| `GCP_SA_KEY` | backend, ingestion, dlp, crawler | Service account JSON key — see setup below |
+| `FIREBASE_SERVICE_ACCOUNT_ENP_SECURECHAT` | frontend | Service account JSON with Firebase Hosting Admin role |
 
-### Workload Identity Federation setup (one-time)
+### GCP service account setup (one-time)
 
-```bash
-PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
-SA="github-actions@${PROJECT_ID}.iam.gserviceaccount.com"
+In GCP Console → IAM & Admin → Service Accounts → Create service account `github-cicd`, grant roles:
+- Cloud Run Admin
+- Cloud Build Editor
+- Artifact Registry Writer
+- Service Account User
 
-# Service account
-gcloud iam service-accounts create github-actions --display-name="GitHub Actions"
-
-# Grant minimum roles
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA}" --role="roles/run.admin"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA}" --role="roles/cloudbuild.builds.editor"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA}" --role="roles/artifactregistry.writer"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${SA}" --role="roles/iam.serviceAccountUser"
-
-# WIF pool and provider
-gcloud iam workload-identity-pools create github-pool \
-  --location=global --display-name="GitHub Actions pool"
-
-gcloud iam workload-identity-pools providers create-oidc github-provider \
-  --location=global \
-  --workload-identity-pool=github-pool \
-  --issuer-uri="https://token.actions.githubusercontent.com" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --attribute-condition="assertion.repository=='<YOUR_GITHUB_ORG>/<YOUR_REPO>'"
-
-POOL_ID=$(gcloud iam workload-identity-pools describe github-pool \
-  --location=global --format='value(name)')
-
-gcloud iam service-accounts add-iam-policy-binding $SA \
-  --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/${POOL_ID}/attribute.repository/<YOUR_GITHUB_ORG>/<YOUR_REPO>"
-
-# Print the values to paste into GitHub Secrets
-echo "WIF_PROVIDER: ${POOL_ID}/providers/github-provider"
-echo "WIF_SERVICE_ACCOUNT: ${SA}"
-```
-
-Replace `<YOUR_GITHUB_ORG>/<YOUR_REPO>` with the actual GitHub repository path.
+Then Keys → Add Key → JSON. Paste the downloaded JSON as the `GCP_SA_KEY` GitHub secret.
