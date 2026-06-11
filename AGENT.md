@@ -27,9 +27,9 @@ export APP_DOMAIN="enpsecurechat.com"
 ## 1. Objective & Architectural Boundaries
 
 - **Role:** GCP Cloud Architect / Senior DevOps Engineer. Do not modify Java, Angular, Python, or TypeScript application source code.
-- **Cost model:** Zero idle cost. All services run on Cloud Run with `--min-instances=0` (scale-to-zero).
+- **Cost model:** Zero idle cost. All Cloud Run services run with `--min-instances=0` (scale-to-zero). The Angular frontend is served by Firebase Hosting (global CDN — no container, no idle cost).
 - **Security mesh:** `securechat-dlp` and `securechat-ingestion` are deployed with `--ingress=all --allow-unauthenticated`. **Do NOT use `--ingress=internal`** — Cloud Run-to-Cloud Run calls via `.run.app` URLs travel over the public internet and are treated as external traffic by Google's load balancer; `--ingress=internal` silently blocks them with a Google infrastructure 404 before the container ever receives the request. The IAM `allUsers:run.invoker` binding is the access boundary, not network ingress.
-- **Cold-start timeouts:** `securechat-ingestion` (sentence-transformers) takes ~60 s to cold-start; `securechat-dlp` (spaCy `pt_core_news_lg` + Presidio) takes ~30 s. The backend is already configured with matching read-timeouts (`embed-service.read-timeout: 90000`, `dlp-service.read-timeout: 60000`). The nginx frontend has `proxy_read_timeout 240s`.
+- **Cold-start timeouts:** `securechat-ingestion` (sentence-transformers) takes ~60 s to cold-start; `securechat-dlp` (spaCy `pt_core_news_lg` + Presidio) takes ~30 s. The backend is already configured with matching read-timeouts (`embed-service.read-timeout: 90000`, `dlp-service.read-timeout: 60000`).
 
 ---
 
@@ -55,8 +55,11 @@ flowchart TD
         Qdrant_Cloud[(Qdrant Cloud Cluster<br/>Free Tier Vector DB)]:::saas
     end
 
+    subgraph Firebase_Hosting [Firebase Hosting · Global CDN]
+        FB_Host[Firebase Hosting<br/>enpsecurechat.com · SPA + /api rewrite]:::saas
+    end
+
     subgraph GCP_Cloud_Run [GCP Cloud Run · Scaled to Zero]
-        CR_Front[Cloud Run: securechat-frontend<br/>Domain: enpsecurechat.com · Port 80]:::run
         CR_Back[Cloud Run: securechat-backend<br/>Domain: api.enpsecurechat.com · Port 3000]:::run
 
         CR_Dlp[Cloud Run: securechat-dlp<br/>Public Ingress · IAM Protected · Port 8000]:::run
@@ -71,8 +74,8 @@ flowchart TD
 
     User ===>|1. OIDC login| Auth0
     Auth0 -.->|2. JWT with role claims| User
-    User ===>|3. HTTPS static assets| CR_Front
-    User ===>|4. REST + JWT| CR_Back
+    User ===>|3. HTTPS static assets| FB_Host
+    FB_Host ===>|4. /api/** rewrite| CR_Back
 
     CR_Back ===>|Embed prompt · Port 8001| CR_Ing
     CR_Back ===>|DLP redact response · Port 8000| CR_Dlp
@@ -93,7 +96,7 @@ flowchart TD
 
 ## 3. Local Docker Compose Development
 
-Use this before or instead of Cloud Run for local testing. All services run in Docker; nginx proxies the Angular app to the Spring Boot backend on the Docker network.
+Use this before or instead of Cloud Run for local testing.
 
 **Prerequisites:** `infra/.env` filled in (copy from `infra/.env.example`).
 
@@ -102,7 +105,7 @@ cd infra
 docker compose up -d
 ```
 
-- The `frontend` service mounts `infra/nginx.local.conf` at runtime, overriding the Cloud Run nginx config baked into the image. This routes `/api/` to `http://backend:3000` on the Docker network instead of the Cloud Run `.run.app` URL.
+- There is **no `frontend` service** in docker-compose — the Angular dev server runs separately via `npm start` inside `frontend/` (uses `proxy.conf.json` to forward `/api/` to `http://localhost:3000`).
 - The `backend` service reads all credentials from `infra/.env` via `env_file`.
 - The local `qdrant` container runs idle if `QDRANT_URL` in `.env` points to Qdrant Cloud — this is intentional so local tests use the same vector index as production.
 - There is **no Keycloak** — identity is Auth0 cloud. The `keycloak` service was removed from docker-compose.
@@ -163,19 +166,13 @@ done
 
 ### Phase 2 — Build Images
 
-> **Before building the frontend:** update `set $backend_host` in `frontend/nginx.conf` to the new backend's `.run.app` URL. You don't know this URL until after Phase 4's first backend deploy — deploy the backend first with a placeholder, capture its URL, update `nginx.conf`, then rebuild and redeploy the frontend.
->
-> **nginx proxy_pass rule:** `proxy_pass https://$backend_host;` must have **no trailing path**. Adding a path (e.g. `/api/`) causes nginx to ignore the request URI and send every request to that static path, returning 404 for all endpoints. This is nginx behavior specific to variable-containing proxy_pass values.
->
-> **Why `.run.app` and not `api.enpsecurechat.com`:** if Cloudflare proxies the `api` subdomain (orange cloud), it intercepts ACME challenges and the Cloud Run SSL certificate never provisions. Pointing nginx directly at the `.run.app` URL bypasses the domain mapping dependency.
+Build the backend, DLP, and ingestion images. The frontend is built and deployed automatically by the GitHub Actions workflow (Section 7) — no image needed.
 
-Build each component from its own directory:
 ```bash
 # From project root
 cd backend      && gcloud builds submit --tag $REGISTRY/securechat-backend:latest     --region=$REGION . && cd ..
 cd dlp-service  && gcloud builds submit --tag $REGISTRY/securechat-dlp:latest         --region=$REGION . && cd ..
 cd ingestion    && gcloud builds submit --tag $REGISTRY/securechat-ingestion:latest   --region=$REGION . && cd ..
-cd frontend     && gcloud builds submit --tag $REGISTRY/securechat-frontend:latest    --region=$REGION . && cd ..
 ```
 
 ### Phase 3 — Deploy Internal Services
@@ -209,7 +206,7 @@ DLP_URL=$(gcloud run services describe securechat-dlp    --region=$REGION --form
 ING_URL=$(gcloud run services describe securechat-ingestion --region=$REGION --format='value(status.url)')
 ```
 
-### Phase 4 — Deploy Backend & Frontend
+### Phase 4 — Deploy Backend
 
 Deploy the backend:
 ```bash
@@ -221,23 +218,7 @@ gcloud run deploy securechat-backend \
   --set-secrets="ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,QDRANT_API_KEY=QDRANT_API_KEY:latest,SPRING_DATASOURCE_PASSWORD=SPRING_DATASOURCE_PASSWORD:latest"
 ```
 
-Capture the backend URL and update `frontend/nginx.conf` before building the frontend:
-```bash
-BACKEND_URL=$(gcloud run services describe securechat-backend --region=$REGION --format='value(status.url)')
-# Strip the https:// prefix — nginx.conf uses: set $backend_host "xxx.run.app";
-BACKEND_HOST=$(echo $BACKEND_URL | sed 's|https://||')
-echo "Update set \$backend_host \"$BACKEND_HOST\"; in frontend/nginx.conf, then rebuild the frontend image."
-```
-
-After updating `nginx.conf`, rebuild and deploy the frontend:
-```bash
-cd frontend && gcloud builds submit --tag $REGISTRY/securechat-frontend:latest --region=$REGION . && cd ..
-
-gcloud run deploy securechat-frontend \
-  --image $REGISTRY/securechat-frontend:latest \
-  --region=$REGION --port=80 --min-instances=0 \
-  --ingress=all --allow-unauthenticated
-```
+The frontend is deployed to Firebase Hosting — see Section 6.
 
 ### Phase 5 — Crawler Job
 
@@ -271,17 +252,16 @@ gcloud scheduler jobs create http anp-crawler-schedule \
 
 > Use `gcloud beta run domain-mappings` — the GA command group errors on managed Cloud Run.
 
+Backend API domain:
 ```bash
-gcloud beta run domain-mappings create \
-  --service=securechat-frontend --domain=$APP_DOMAIN \
-  --platform=managed --region=$REGION
-
 gcloud beta run domain-mappings create \
   --service=securechat-backend --domain=api.$APP_DOMAIN \
   --platform=managed --region=$REGION
 ```
 
-Each command outputs A/AAAA records — add them at your DNS registrar. SSL certificate provisioning takes up to 24 hours. Do not loop-ping the custom domains during provisioning.
+The command outputs A/AAAA records — add them at your DNS registrar. SSL certificate provisioning takes up to 24 hours.
+
+**Frontend domain** — Managed via Firebase Hosting, not Cloud Run domain mappings. Go to Firebase Console → Hosting → Add custom domain → `enpsecurechat.com`. Firebase provisions SSL and provides DNS records.
 
 ---
 
@@ -326,22 +306,22 @@ curl -s https://api.$APP_DOMAIN/api/health
 
 ## 6. Firebase Hosting (Frontend)
 
-The Angular frontend is served via Firebase Hosting — not Cloud Run. `firebase.json` and `.firebaserc` live at the repo root.
+The Angular frontend is served via Firebase Hosting — not Cloud Run. `firebase.json` and `.firebaserc` live at the repo root and are already configured for project `enp-securechat`.
 
-**First-time setup:**
+**GCP project registration (one-time):** Visit `console.firebase.google.com`, select the `enp-securechat` GCP project, and enable Hosting. Required before any deploy — `firebase deploy` will fail with "project not found" if skipped.
+
+**Manual deploy (local):**
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase init hosting  # select existing project enp-securechat, skip overwriting firebase.json
-```
 
-**Manual deploy:**
-```bash
 cd frontend && npm run build && cd ..
 firebase deploy --only hosting
 ```
 
-**`/api/**` rewrite** — Firebase Hosting rewrites these requests to the `securechat-backend` Cloud Run service (same GCP project, `us-east4`). No nginx container needed.
+**`/api/**` rewrite** — Firebase Hosting rewrites these requests directly to the `securechat-backend` Cloud Run service (same GCP project, `us-east4`). No nginx container needed.
+
+**Custom domain** — Managed via Firebase Console → Hosting → Custom domain. Add `enpsecurechat.com`; Firebase provisions the SSL certificate and provides DNS records to set at your registrar.
 
 **Local dev** — `npm start` inside `frontend/` uses `proxy.conf.json` to forward `/api/` to `http://localhost:3000`. The Docker Compose stack runs the backend, ingestion, DLP, and Qdrant; the Angular dev server runs separately.
 
@@ -353,25 +333,27 @@ Workflows live in `.github/workflows/`. Each triggers only on path-filtered push
 
 | Workflow | Trigger paths | Action |
 |---|---|---|
-| `frontend.yml` | `frontend/**`, `firebase.json`, `.firebaserc` | `npm run build` → Firebase Hosting deploy |
-| `backend.yml` | `backend/**` | Cloud Build → `gcloud run deploy securechat-backend` |
-| `ingestion.yml` | `ingestion/**` | Cloud Build → `gcloud run deploy securechat-ingestion` |
-| `dlp.yml` | `dlp-service/**` | Cloud Build → `gcloud run deploy securechat-dlp` |
+| `frontend.yml` | `frontend/**`, `firebase.json`, `.firebaserc` | `npm run build` → `firebase deploy --only hosting` |
+| `backend.yml` | `backend/**` | Docker build on runner → `gcloud run deploy securechat-backend` |
+| `ingestion.yml` | `ingestion/**` | Docker build on runner → `gcloud run deploy securechat-ingestion` |
+| `dlp.yml` | `dlp-service/**` | Docker build on runner → `gcloud run deploy securechat-dlp` |
 | `crawler.yml` | `infra/crawler-job.yaml` | `gcloud run jobs replace` |
 
 ### Required GitHub Secrets
 
 | Secret | Used by | How to obtain |
 |---|---|---|
-| `GCP_SA_KEY` | backend, ingestion, dlp, crawler | Service account JSON key — see setup below |
-| `FIREBASE_SERVICE_ACCOUNT_ENP_SECURECHAT` | frontend | Service account JSON with Firebase Hosting Admin role |
+| `GCP_SA_KEY` | all workflows | Service account JSON key for `github-cicd` — see setup below |
 
 ### GCP service account setup (one-time)
 
-In GCP Console → IAM & Admin → Service Accounts → Create service account `github-cicd`, grant roles:
-- Cloud Run Admin
-- Cloud Build Editor
-- Artifact Registry Writer
-- Service Account User
+In GCP Console → IAM & Admin → Service Accounts → Create service account `github-cicd`, grant these roles:
+
+- `roles/run.admin` — deploy Cloud Run services and update the crawler job
+- `roles/artifactregistry.writer` — push Docker images to Artifact Registry
+- `roles/iam.serviceAccountUser` — required by `gcloud run deploy` to bind the runtime service account
+- `roles/firebase.admin` — deploy Firebase Hosting and read project metadata
 
 Then Keys → Add Key → JSON. Paste the downloaded JSON as the `GCP_SA_KEY` GitHub secret.
+
+> **Note:** `github-firebase-deploy` is not needed — it was created for a legacy Firebase GitHub Action that has since been replaced by the explicit `firebase deploy --only hosting` CLI call authenticated via `GCP_SA_KEY`.
