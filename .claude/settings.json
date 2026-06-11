@@ -5,7 +5,12 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://securechat-backend-ik6im6ikgq-uk.a.run.app/api/conversations\")",
       "Bash(gcloud builds *)",
       "Bash(python3 -c \"import json,sys; env=json.load\\(sys.stdin\\)['spec']['template']['spec']['containers'][0]['env']; [print\\(e['name'],'=',e.get\\('value','<secret>'\\)\\) for e in env]\")",
-      "Bash(gcloud artifacts *)"
+      "Bash(gcloud artifacts *)",
+      "Bash(mkdir -p /mnt/c/Users/Pichau/Projetos/Enterprise-SecureChat/.github/workflows && echo \"created\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\Pichau\\\\Projetos\\\\Enterprise-SecureChat\\\\.github\\\\workflows\")"
+    ],
+    "additionalDirectories": [
+      "\\mnt\\c\\Users\\Pichau\\Projetos\\Enterprise-SecureChat\\.github"
     ]
   }
 }

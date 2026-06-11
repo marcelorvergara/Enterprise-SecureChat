@@ -305,7 +305,6 @@ gcloud logging read \
 
 | Service | What to confirm |
 |---|---|
-| `securechat-frontend` | nginx starts without `[emerg] host not found in upstream` |
 | `securechat-backend` | No `HikariPool-1 - Connection is not available` or `SQLException` |
 | `securechat-ingestion` | Uvicorn prints startup completion; no `ModuleNotFoundError` |
 | `securechat-dlp` | Uvicorn prints startup completion; no spaCy model exceptions |
@@ -322,3 +321,92 @@ If either shows `ingress=internal`, Cloud Run-to-Cloud Run calls will be blocked
 # Should return 200 with a JSON health object
 curl -s https://api.$APP_DOMAIN/api/health
 ```
+
+---
+
+## 6. Firebase Hosting (Frontend)
+
+The Angular frontend is served via Firebase Hosting — not Cloud Run. `firebase.json` and `.firebaserc` live at the repo root.
+
+**First-time setup:**
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init hosting  # select existing project enp-securechat, skip overwriting firebase.json
+```
+
+**Manual deploy:**
+```bash
+cd frontend && npm run build && cd ..
+firebase deploy --only hosting
+```
+
+**`/api/**` rewrite** — Firebase Hosting rewrites these requests to the `securechat-backend` Cloud Run service (same GCP project, `us-east4`). No nginx container needed.
+
+**Local dev** — `npm start` inside `frontend/` uses `proxy.conf.json` to forward `/api/` to `http://localhost:3000`. The Docker Compose stack runs the backend, ingestion, DLP, and Qdrant; the Angular dev server runs separately.
+
+---
+
+## 7. GitHub Actions CI/CD
+
+Workflows live in `.github/workflows/`. Each triggers only on path-filtered pushes to `main`.
+
+| Workflow | Trigger paths | Action |
+|---|---|---|
+| `frontend.yml` | `frontend/**`, `firebase.json`, `.firebaserc` | `npm run build` → Firebase Hosting deploy |
+| `backend.yml` | `backend/**` | Cloud Build → `gcloud run deploy securechat-backend` |
+| `ingestion.yml` | `ingestion/**` | Cloud Build → `gcloud run deploy securechat-ingestion` |
+| `dlp.yml` | `dlp-service/**` | Cloud Build → `gcloud run deploy securechat-dlp` |
+| `crawler.yml` | `infra/crawler-job.yaml` | `gcloud run jobs replace` |
+
+### Required GitHub Secrets
+
+| Secret | Used by | How to obtain |
+|---|---|---|
+| `WIF_PROVIDER` | backend, ingestion, dlp, crawler | See WIF setup below |
+| `WIF_SERVICE_ACCOUNT` | backend, ingestion, dlp, crawler | See WIF setup below |
+| `FIREBASE_SERVICE_ACCOUNT_ENP_SECURECHAT` | frontend | Run `firebase init hosting:github` — it creates the secret automatically |
+
+### Workload Identity Federation setup (one-time)
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+SA="github-actions@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# Service account
+gcloud iam service-accounts create github-actions --display-name="GitHub Actions"
+
+# Grant minimum roles
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${SA}" --role="roles/run.admin"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${SA}" --role="roles/cloudbuild.builds.editor"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${SA}" --role="roles/artifactregistry.writer"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${SA}" --role="roles/iam.serviceAccountUser"
+
+# WIF pool and provider
+gcloud iam workload-identity-pools create github-pool \
+  --location=global --display-name="GitHub Actions pool"
+
+gcloud iam workload-identity-pools providers create-oidc github-provider \
+  --location=global \
+  --workload-identity-pool=github-pool \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='<YOUR_GITHUB_ORG>/<YOUR_REPO>'"
+
+POOL_ID=$(gcloud iam workload-identity-pools describe github-pool \
+  --location=global --format='value(name)')
+
+gcloud iam service-accounts add-iam-policy-binding $SA \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/${POOL_ID}/attribute.repository/<YOUR_GITHUB_ORG>/<YOUR_REPO>"
+
+# Print the values to paste into GitHub Secrets
+echo "WIF_PROVIDER: ${POOL_ID}/providers/github-provider"
+echo "WIF_SERVICE_ACCOUNT: ${SA}"
+```
+
+Replace `<YOUR_GITHUB_ORG>/<YOUR_REPO>` with the actual GitHub repository path.

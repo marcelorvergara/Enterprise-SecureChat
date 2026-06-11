@@ -1,0 +1,35 @@
+{
+  "hosting": {
+    "public": "frontend/dist/enterprise-securechat-frontend/browser",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "securechat-backend",
+          "region": "us-east4"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=15552000, immutable" }
+        ]
+      },
+      {
+        "source": "**",
+        "headers": [
+          { "key": "X-Frame-Options",        "value": "DENY" },
+          { "key": "X-Content-Type-Options",  "value": "nosniff" },
+          { "key": "Referrer-Policy",          "value": "strict-origin-when-cross-origin" }
+        ]
+      }
+    ]
+  }
+}

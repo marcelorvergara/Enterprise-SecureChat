@@ -1,0 +1,28 @@
+name: Update Crawler Job
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/crawler-job.yaml'
+      - '.github/workflows/crawler.yml'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Apply crawler job config
+        run: gcloud run jobs replace infra/crawler-job.yaml --region=us-east4
