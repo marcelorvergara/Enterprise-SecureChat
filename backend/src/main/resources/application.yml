@@ -73,6 +73,16 @@ og:
   # compute cross-BU path restrictions from the user's GROUP_BU_xxx authority.
   known-bus: ${OG_KNOWN_BUS:campos,santos,solimoes}
 
+# ── Logging ──────────────────────────────────────────────────────────────────
+# Lock HTTP client loggers to WARN. At DEBUG, Spring's RestClient emits request
+# headers — which would expose the Anthropic x-api-key. Bodies are not logged
+# by SimpleClientHttpRequestFactory (no buffering), but headers alone are
+# sufficient to leak credentials. Never lower these below WARN.
+logging:
+  level:
+    root: INFO
+    org.springframework.web.client: WARN
+
 # ── Actuator ─────────────────────────────────────────────────────────────────
 management:
   endpoints:
