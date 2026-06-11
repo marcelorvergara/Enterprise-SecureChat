@@ -19,11 +19,13 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build image
+      - name: Configure Docker
+        run: gcloud auth configure-docker us-east4-docker.pkg.dev --quiet
+
+      - name: Build and push image
         run: |
-          gcloud builds submit \
-            --tag us-east4-docker.pkg.dev/enp-securechat/securechat-repo/securechat-backend:latest \
-            --region=us-east4 .
+          docker build -t us-east4-docker.pkg.dev/enp-securechat/securechat-repo/securechat-backend:latest .
+          docker push us-east4-docker.pkg.dev/enp-securechat/securechat-repo/securechat-backend:latest
         working-directory: backend
 
       - name: Deploy to Cloud Run
