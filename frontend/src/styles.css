@@ -117,6 +117,8 @@
   --c-menu-text:      #e2e8f0;
   --c-menu-icon:      #94a3b8;
   --c-menu-role:      rgba(255, 255, 255, 0.35);
+  --c-new-chat-btn-bg: rgba(255, 255, 255, 0.10);
+  --c-signout-bg:     rgba(255, 255, 255, 0.08);
 
   /* Scrollbar */
   --c-scroll:         rgba(255, 255, 255, 0.10);
@@ -247,6 +249,8 @@ body.theme-light {
   --c-menu-text:      #0f1f14;
   --c-menu-icon:      #3d6b4f;
   --c-menu-role:      rgba(0, 0, 0, 0.45);
+  --c-new-chat-btn-bg: transparent;
+  --c-signout-bg:     transparent;
 
   /* Scrollbar */
   --c-scroll:         rgba(0, 0, 0, 0.12);
@@ -314,6 +318,10 @@ mat-toolbar[color="primary"],
 .mat-mdc-menu-item mat-icon,
 .mat-mdc-menu-item .mat-icon {
   color: var(--c-menu-icon) !important;
+}
+
+.mat-mdc-menu-item.logout-btn {
+  background-color: var(--c-signout-bg) !important;
 }
 
 /* Nav list text */

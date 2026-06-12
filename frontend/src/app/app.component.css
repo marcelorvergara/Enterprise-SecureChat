@@ -17,6 +17,11 @@
   border-bottom: 1px solid var(--c-border);
 }
 
+.sidenav-header a[mat-icon-button] {
+  background: var(--c-new-chat-btn-bg);
+  transition: background 0.15s;
+}
+
 .sidenav-title {
   font-family: 'Inter', sans-serif;
   font-size: 0.68rem;
