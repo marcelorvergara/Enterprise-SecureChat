@@ -212,6 +212,9 @@
   opacity: 0;
   transition: opacity 0.15s;
   flex-shrink: 0;
+  --mat-icon-button-hover-state-layer-opacity: 0;
+  --mat-icon-button-pressed-state-layer-opacity: 0;
+  --mat-icon-button-focus-state-layer-opacity: 0;
 }
 
 .conv-item:hover .delete-conv-btn,
