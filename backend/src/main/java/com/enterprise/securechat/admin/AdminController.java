@@ -2,6 +2,7 @@ package com.enterprise.securechat.admin;
 
 import com.enterprise.securechat.audit.RestrictionAuditLog;
 import com.enterprise.securechat.audit.RestrictionAuditLogRepository;
+import com.enterprise.securechat.conversation.MessageRepository;
 import com.enterprise.securechat.fga.Role;
 import com.enterprise.securechat.fga.RoleRepository;
 import com.enterprise.securechat.fga.RoleRestriction;
@@ -31,13 +32,16 @@ public class AdminController {
     private final RoleRepository roleRepository;
     private final RoleRestrictionRepository restrictionRepository;
     private final RestrictionAuditLogRepository auditLogRepository;
+    private final MessageRepository messageRepository;
 
     public AdminController(RoleRepository roleRepository,
                            RoleRestrictionRepository restrictionRepository,
-                           RestrictionAuditLogRepository auditLogRepository) {
+                           RestrictionAuditLogRepository auditLogRepository,
+                           MessageRepository messageRepository) {
         this.roleRepository = roleRepository;
         this.restrictionRepository = restrictionRepository;
         this.auditLogRepository = auditLogRepository;
+        this.messageRepository = messageRepository;
     }
 
     // ── GET /api/admin/roles ────────────────────────────────────────────────────
@@ -102,6 +106,20 @@ public class AdminController {
                         e.getQueryHash(),
                         e.getAccessedAt()));
         return ResponseEntity.ok(result);
+    }
+
+    // ── GET /api/admin/metrics/security-heatmap ─────────────────────────────────
+    @GetMapping("/metrics/security-heatmap")
+    public ResponseEntity<SecurityHeatmapResponse> getSecurityHeatmap() {
+        var paths = auditLogRepository.findTopRestrictedPaths().stream()
+                .map(row -> new SecurityHeatmapResponse.PathHitCount(
+                        (String) row[0], ((Number) row[1]).longValue()))
+                .toList();
+        var dlpDensity = messageRepository.findDlpDensityByDay().stream()
+                .map(row -> new SecurityHeatmapResponse.DlpDensityPoint(
+                        (String) row[0], ((Number) row[1]).longValue()))
+                .toList();
+        return ResponseEntity.ok(new SecurityHeatmapResponse(paths, dlpDensity));
     }
 
     // ── DTOs ────────────────────────────────────────────────────────────────────

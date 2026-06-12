@@ -31,6 +31,7 @@ export interface ChatResponse {
   sources: SourceCitation[];
   fgaApplied: boolean;
   dlpEntitiesRedacted: number;
+  suggestions: string[];
 }
 
 export interface Conversation {

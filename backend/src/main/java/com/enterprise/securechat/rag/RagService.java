@@ -24,6 +24,7 @@ public class RagService {
     private static final int TOP_K = 10;
     // Last N conversation turns (user+assistant pairs) sent to Claude
     private static final int HISTORY_TURNS = 10;
+    private static final int STRUCTURED_CHAT_MAX_TOKENS = 1536;
 
     private final FgaService fgaService;
     private final EmbedClient embedClient;
@@ -118,25 +119,35 @@ public class RagService {
         }
         claudeMessages.add(new ClaudeService.ConversationMessage("user", request.message()));
 
-        // ── 7. Call Claude (blocking — DLP requires the complete answer) ────────
-        var rawAnswer = claudeService.complete(systemPrompt, claudeMessages);
+            // ── 7. Call Claude (blocking — DLP requires the complete answer) ────────
+        var rawResponse = claudeService.complete(systemPrompt, claudeMessages, STRUCTURED_CHAT_MAX_TOKENS);
+        var parsed = parseClaudeResponse(rawResponse);
 
-        // ── 8. DLP — redact PII and financial figures before returning ────────
-        var dlpResult = dlpClient.analyze(rawAnswer, roles);
+        // ── 8. DLP — answer + each suggestion (suggestions must never bypass DLP) ──
+        var dlpAnswer = dlpClient.analyze(parsed.answer(), roles);
+        var dlpSuggestions = parsed.suggestions().stream()
+                .map(s -> dlpClient.analyze(s, roles))
+                .toList();
+        int totalRedacted = dlpAnswer.entitiesRedacted()
+                + dlpSuggestions.stream().mapToInt(DlpClient.DlpResult::entitiesRedacted).sum();
+        var cleanedSuggestions = dlpSuggestions.stream()
+                .map(DlpClient.DlpResult::cleanedText)
+                .toList();
 
-        // ── 9. Persist messages (store the redacted answer, not the raw one) ──
+        // ── 9. Persist — cleaned answer only; suggestions are ephemeral UI hints ──
         conversationService.saveUserMessage(conversation.getId(), request.message());
-        conversationService.saveAssistantMessage(conversation.getId(), dlpResult.cleanedText(), sources);
+        conversationService.saveAssistantMessage(conversation.getId(), dlpAnswer.cleanedText(), sources);
 
         // ── 10. Audit log — SHA-256 of prompt, never raw text ────────────────
         auditService.log(userSub, roles, restrictedPaths, request.message());
 
         return new ChatResponse(
-                dlpResult.cleanedText(),
+                dlpAnswer.cleanedText(),
                 conversation.getId(),
                 sources,
                 !restrictedPaths.isEmpty(),
-                dlpResult.entitiesRedacted()
+                totalRedacted,
+                cleanedSuggestions
         );
     }
 
@@ -199,21 +210,32 @@ public class RagService {
         }
         claudeMessages.add(new ClaudeService.ConversationMessage("user", request.message()));
 
-        var rawAnswer = claudeService.complete(systemPrompt, claudeMessages, 2048);
-        var dlpResult = dlpClient.analyze(rawAnswer, roles);
+        var rawResponse = claudeService.complete(systemPrompt, claudeMessages, 2048);
+        var parsed = parseClaudeResponse(rawResponse);
+
+        var dlpAnswer = dlpClient.analyze(parsed.answer(), roles);
+        var dlpSuggestions = parsed.suggestions().stream()
+                .map(s -> dlpClient.analyze(s, roles))
+                .toList();
+        int totalRedacted = dlpAnswer.entitiesRedacted()
+                + dlpSuggestions.stream().mapToInt(DlpClient.DlpResult::entitiesRedacted).sum();
+        var cleanedSuggestions = dlpSuggestions.stream()
+                .map(DlpClient.DlpResult::cleanedText)
+                .toList();
 
         var userMessageContent = request.message() + " [Attached: " + documentFilename + "]";
         conversationService.saveUserMessage(conversation.getId(), userMessageContent);
-        conversationService.saveAssistantMessage(conversation.getId(), dlpResult.cleanedText(), sources);
+        conversationService.saveAssistantMessage(conversation.getId(), dlpAnswer.cleanedText(), sources);
 
         auditService.log(userSub, roles, restrictedPaths, request.message());
 
         return new ChatResponse(
-                dlpResult.cleanedText(),
+                dlpAnswer.cleanedText(),
                 conversation.getId(),
                 sources,
                 !restrictedPaths.isEmpty(),
-                dlpResult.entitiesRedacted()
+                totalRedacted,
+                cleanedSuggestions
         );
     }
 
@@ -228,25 +250,35 @@ public class RagService {
              + documentText + "\n\n"
              + "Compare the submitted document against the knowledge base. "
              + "Identify discrepancies, errors, outdated figures, or ANP compliance issues. "
-             + "If the knowledge base lacks coverage on the submitted topic, say so clearly.";
+             + "If the knowledge base lacks coverage on the submitted topic, say so clearly."
+             + JSON_FORMAT_INSTRUCTION;
     }
 
     private String buildSystemPrompt(String contextChunks) {
         if (contextChunks == null || contextChunks.isBlank()) {
             return OG_BASE_INSTRUCTIONS + "\n\n"
                  + "No relevant documents were found for this query — "
-                 + "say so clearly rather than inventing information.";
+                 + "say so clearly rather than inventing information."
+                 + JSON_FORMAT_INSTRUCTION;
         }
         return OG_BASE_INSTRUCTIONS + "\n\n"
              + "Answer using ONLY the provided context. "
              + "Do not invent facts not present in the context. "
              + "If the context is insufficient, say so clearly.\n\n"
-             + "Context:\n" + contextChunks;
+             + "Context:\n" + contextChunks
+             + JSON_FORMAT_INSTRUCTION;
     }
 
     // Base instructions shared by all system prompts.
     // Unit rule closes the bare-number DLP gap: a number like "450,000" with no unit
     // bypasses the FINANCIAL_FIGURE recognizer, but "450,000 MMboe" is caught by OG_VOLUMES.
+    private static final String JSON_FORMAT_INSTRUCTION =
+        "\n\nRESPONSE FORMAT: Return ONLY a JSON object — no markdown fences, no extra text:\n"
+      + "{\"answer\": \"<your full answer, escape internal quotes>\", "
+      + "\"suggestions\": [\"<follow-up 1>?\", \"<follow-up 2>?\", \"<follow-up 3>?\"]}\n"
+      + "Suggestions must be specific, contextual follow-ups based solely on your answer. "
+      + "Use 2-3 questions. If unanswerable, still return valid JSON with empty suggestions array.";
+
     private static final String OG_BASE_INSTRUCTIONS =
         "You are an Oil & Gas enterprise knowledge assistant operating under ANP compliance rules.\n"
       + "Always attach standard measurement units to every quantity you cite: "
@@ -255,6 +287,33 @@ public class RagService {
       + "Never write a bare number without its unit or currency symbol.\n"
       + "When your answer contains information sourced from an ANP official document, "
       + "prefix that paragraph with 'ANP Response:' so it can be identified downstream.";
+
+    private record StructuredResponse(String answer, List<String> suggestions) {}
+
+    private StructuredResponse parseClaudeResponse(String raw) {
+        try {
+            int start = raw.indexOf('{');
+            int end   = raw.lastIndexOf('}');
+            if (start != -1 && end > start) {
+                var json   = raw.substring(start, end + 1);
+                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                var node   = mapper.readTree(json);
+                var answer = node.path("answer").asText(null);
+                var suggestions = new java.util.ArrayList<String>();
+                var sugNode = node.path("suggestions");
+                if (sugNode.isArray()) {
+                    for (var s : sugNode) {
+                        var text = s.asText("").strip();
+                        if (!text.isBlank()) suggestions.add(text);
+                    }
+                }
+                if (answer != null && !answer.isBlank()) {
+                    return new StructuredResponse(answer, List.copyOf(suggestions));
+                }
+            }
+        } catch (Exception ignored) {}
+        return new StructuredResponse(raw, List.of());
+    }
 
     private String payloadString(Map<String, Object> payload, String key) {
         var val = payload.get(key);

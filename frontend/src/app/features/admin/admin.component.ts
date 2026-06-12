@@ -1,4 +1,5 @@
 import { Component, OnInit, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
@@ -13,11 +14,18 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { CommonModule, DatePipe, SlicePipe } from '@angular/common';
+import { BaseChartDirective } from 'ng2-charts';
+import { ChartData, ChartOptions } from 'chart.js';
 import {
   AdminService,
   RoleWithRestrictions,
   AuditLogEntry,
 } from '../../core/services/admin.service';
+
+interface SecurityHeatmapData {
+  topRestrictedPaths: { path: string; hitCount: number }[];
+  dlpDensityByDay:    { day: string; totalRedacted: number }[];
+}
 
 interface RestrictionRow {
   id: string;
@@ -47,6 +55,7 @@ interface RestrictionRow {
     DatePipe,
     SlicePipe,
     CommonModule,
+    BaseChartDirective,
   ],
   templateUrl: './admin.component.html',
   styleUrls: ['./admin.component.css'],
@@ -55,6 +64,7 @@ export class AdminComponent implements OnInit {
   private readonly adminService = inject(AdminService);
   private readonly snackBar = inject(MatSnackBar);
   private readonly fb = inject(FormBuilder);
+  private readonly http = inject(HttpClient);
 
   // ── Restriction table ────────────────────────────────────────────────────
   roles: RoleWithRestrictions[] = [];
@@ -75,6 +85,20 @@ export class AdminComponent implements OnInit {
   submitting = false;
   confirmDeleteId: string | null = null;
 
+  // ── Security heatmap ─────────────────────────────────────────────────────
+  heatmapLoading = false;
+  pathsChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  densityChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  horizontalBarOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+  };
+  densityBarOptions: ChartOptions<'bar'> = {
+    responsive: true,
+    plugins: { legend: { display: false } },
+  };
+
   ngOnInit(): void {
     this.addForm = this.fb.group({
       roleName: ['', Validators.required],
@@ -83,6 +107,28 @@ export class AdminComponent implements OnInit {
     });
     this.loadRoles();
     this.loadAuditLog(0, this.auditPageSize);
+    this.loadHeatmap();
+  }
+
+  loadHeatmap(): void {
+    this.heatmapLoading = true;
+    this.http.get<SecurityHeatmapData>('/api/admin/metrics/security-heatmap').subscribe({
+      next: data => {
+        this.pathsChartData = {
+          labels: data.topRestrictedPaths.map(p => p.path),
+          datasets: [{ data: data.topRestrictedPaths.map(p => p.hitCount),
+                       label: 'FGA Blocks', backgroundColor: '#ef5350' }],
+        };
+        const reversed = [...data.dlpDensityByDay].reverse();
+        this.densityChartData = {
+          labels: reversed.map(p => p.day),
+          datasets: [{ data: reversed.map(p => p.totalRedacted),
+                       label: 'DLP Redactions', backgroundColor: '#ff9800' }],
+        };
+        this.heatmapLoading = false;
+      },
+      error: () => { this.heatmapLoading = false; },
+    });
   }
 
   loadRoles(): void {

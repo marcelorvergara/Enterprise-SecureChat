@@ -85,6 +85,17 @@
 
   </div>
 
+  <!-- ── Suggested follow-ups ──────────────────────────────────── -->
+  @if (suggestions.length > 0) {
+    <div class="suggestions-row">
+      <mat-chip-set aria-label="Suggested follow-ups">
+        @for (s of suggestions; track s) {
+          <mat-chip (click)="submitSuggestion(s)" class="suggestion-chip">{{ s }}</mat-chip>
+        }
+      </mat-chip-set>
+    </div>
+  }
+
   <!-- ── Composer ───────────────────────────────────────────────── -->
   <div class="composer">
 

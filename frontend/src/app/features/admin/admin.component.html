@@ -241,4 +241,40 @@
     </mat-card-content>
   </mat-card>
 
+  <!-- ── Security Heatmap ───────────────────────────────────────────────── -->
+  <mat-card class="section-card">
+    <mat-card-header>
+      <mat-icon mat-card-avatar class="icon-heatmap">bar_chart</mat-icon>
+      <mat-card-title>Security Heatmap</mat-card-title>
+      <mat-card-subtitle>FGA restriction hits &amp; DLP redaction density — no raw prompts exposed</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      @if (heatmapLoading) {
+        <div class="loading-row">
+          <mat-spinner diameter="26"></mat-spinner>
+          <span>Loading heatmap…</span>
+        </div>
+      } @else {
+        <div class="charts-grid">
+          <div class="chart-wrap">
+            <h4 class="chart-title">Top Blocked Paths</h4>
+            <canvas baseChart
+              [data]="pathsChartData"
+              [options]="horizontalBarOptions"
+              type="bar">
+            </canvas>
+          </div>
+          <div class="chart-wrap">
+            <h4 class="chart-title">DLP Redaction Density (last 30 days)</h4>
+            <canvas baseChart
+              [data]="densityChartData"
+              [options]="densityBarOptions"
+              type="bar">
+            </canvas>
+          </div>
+        </div>
+      }
+    </mat-card-content>
+  </mat-card>
+
 </div>

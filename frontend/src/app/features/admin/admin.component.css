@@ -260,6 +260,33 @@
   font-style: italic;
 }
 
+/* ── Security heatmap ────────────────────────────────────────────────── */
+.icon-heatmap { color: #5c6bc0; }
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+@media (max-width: 820px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-wrap {
+  min-height: 180px;
+}
+
+.chart-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
 /* ── Material table dark-theme overrides ────────────────────────────── */
 ::ng-deep .full-table {
   background: transparent !important;

@@ -17,4 +17,15 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
 
     @Query("SELECT m FROM Message m WHERE m.conversationId = :conversationId ORDER BY m.createdAt ASC")
     List<Message> findAllByConversationIdOrderByCreatedAtAsc(@Param("conversationId") UUID conversationId);
+
+    @Query(value = """
+            SELECT TO_CHAR(DATE_TRUNC('day', created_at), 'YYYY-MM-DD') AS day,
+                   SUM(dlp_redacted) AS total_redacted
+            FROM messages
+            WHERE role = 'assistant' AND dlp_redacted > 0
+            GROUP BY DATE_TRUNC('day', created_at)
+            ORDER BY DATE_TRUNC('day', created_at) DESC
+            LIMIT 30
+            """, nativeQuery = true)
+    List<Object[]> findDlpDensityByDay();
 }

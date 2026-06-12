@@ -8,5 +8,6 @@ public record ChatResponse(
         UUID conversationId,
         List<SourceCitation> sources,
         boolean fgaApplied,
-        int dlpEntitiesRedacted
+        int dlpEntitiesRedacted,
+        List<String> suggestions
 ) {}

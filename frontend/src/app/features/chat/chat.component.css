@@ -338,6 +338,25 @@
   font-size: 0.9rem;
 }
 
+/* ── Suggested follow-ups ────────────────────────────────────────────────── */
+.suggestions-row {
+  padding: 4px 16px 12px;
+  flex-shrink: 0;
+}
+
+.suggestion-chip {
+  cursor: pointer !important;
+  font-size: 13px;
+  background: var(--c-chip-bg) !important;
+  border: 1px solid var(--c-chip-border) !important;
+  color: var(--c-chip-text) !important;
+  transition: background 0.15s;
+}
+
+.suggestion-chip:hover {
+  background: var(--c-chip-h-bg) !important;
+}
+
 /* ── Composer ────────────────────────────────────────────────────────────── */
 .composer {
   flex-shrink: 0;

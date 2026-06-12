@@ -85,6 +85,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   }
 
   messages: ChatMessage[] = [];
+  suggestions: string[] = [];
   readonly messageControl = new FormControl('');
   loading = false;
   conversationId?: string;
@@ -125,6 +126,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.pendingRequest?.unsubscribe();
     this.pendingRequest = undefined;
     this.messages = [];
+    this.suggestions = [];
     this.conversationId = undefined;
     this.conversationTitle = 'Conversation';
     this.loading = false;
@@ -178,10 +180,17 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     }
   }
 
+  submitSuggestion(text: string): void {
+    this.suggestions = [];
+    this.messageControl.setValue(text);
+    this.sendMessage();
+  }
+
   sendMessage(): void {
     const text = this.messageControl.value?.trim();
     if (!text || this.loading) return;
 
+    this.suggestions = [];
     const fileToSend = this.attachedFile;
     this.attachedFile = undefined;
 
@@ -219,6 +228,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
           fgaApplied: response.fgaApplied,
           dlpEntitiesRedacted: response.dlpEntitiesRedacted,
         });
+        this.suggestions = response.suggestions ?? [];
         this.loading = false;
         this.pendingRequest = undefined;
         this.pendingScroll = true;

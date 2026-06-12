@@ -60,6 +60,9 @@ class RagServiceTest {
         lenient().doReturn(authorities).when(auth).getAuthorities();
         // Default clearance stub — individual tests override where needed
         lenient().when(fgaService.getBlockedClassifications(anyList())).thenReturn(List.of());
+        // Default Claude stub — returns minimal valid JSON; individual tests override where needed
+        lenient().when(claudeService.complete(anyString(), anyList(), anyInt()))
+                 .thenReturn("{\"answer\":\"Default answer.\",\"suggestions\":[]}");
     }
 
     @Test
@@ -75,7 +78,7 @@ class RagServiceTest {
         when(embedClient.embed(request.message())).thenReturn(List.of(0.1f, 0.2f, 0.3f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), eq(10))).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn(rawAnswer);
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn(rawAnswer);
         when(dlpClient.analyze(eq(rawAnswer), anyList())).thenReturn(new DlpClient.DlpResult(cleanedAnswer, 1));
 
         var response = ragService.chat(request, auth);
@@ -100,7 +103,7 @@ class RagServiceTest {
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn("No data found.");
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn("No data found.");
         when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("No data found.", 0));
 
         var response = ragService.chat(request, auth);
@@ -119,7 +122,7 @@ class RagServiceTest {
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn("Drilling starts Q2.");
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn("Drilling starts Q2.");
         when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Drilling starts Q2.", 0));
 
         var response = ragService.chat(request, auth);
@@ -138,7 +141,7 @@ class RagServiceTest {
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn("Hi.");
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn("Hi.");
         when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Hi.", 0));
 
         ragService.chat(request, auth);
@@ -165,7 +168,7 @@ class RagServiceTest {
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn("Answer.");
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn("Answer.");
         when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Answer.", 0));
 
         ragService.chat(request, auth);
@@ -188,7 +191,7 @@ class RagServiceTest {
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), eq(expectedFilter), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn("No access.");
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn("No access.");
         when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("No access.", 0));
 
         ragService.chat(request, auth);
@@ -208,7 +211,7 @@ class RagServiceTest {
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn("Follow-up answered.");
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn("Follow-up answered.");
         when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Follow-up answered.", 0));
 
         ragService.chat(request, auth);
@@ -235,7 +238,7 @@ class RagServiceTest {
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
-        when(claudeService.complete(anyString(), anyList())).thenReturn(rawAnswer);
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn(rawAnswer);
         when(dlpClient.analyze(eq(rawAnswer), anyList())).thenReturn(new DlpClient.DlpResult(rawAnswer, 0));
 
         var response = ragService.chat(request, auth);
@@ -243,5 +246,73 @@ class RagServiceTest {
         // DlpClient receives the role list; DlpClient itself decides the bypass list
         verify(dlpClient).analyze(eq(rawAnswer), argThat(roles -> roles.contains("reserves-management")));
         assertThat(response.answer()).isEqualTo(rawAnswer);
+    }
+
+    @Test
+    void chat_suggestionsReturnedOnValidJson() {
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("What are Q3 reserves?", null);
+        var claudeJson = "{\"answer\":\"Reserves stand at 3.2 MMboe.\",\"suggestions\":[\"What is the decline rate?\",\"Compare to Q2?\"]}";
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn(claudeJson);
+        when(dlpClient.analyze(eq("Reserves stand at 3.2 MMboe."), anyList()))
+                .thenReturn(new DlpClient.DlpResult("Reserves stand at [REDACTED].", 1));
+        when(dlpClient.analyze(eq("What is the decline rate?"), anyList()))
+                .thenReturn(new DlpClient.DlpResult("What is the decline rate?", 0));
+        when(dlpClient.analyze(eq("Compare to Q2?"), anyList()))
+                .thenReturn(new DlpClient.DlpResult("Compare to Q2?", 0));
+
+        var response = ragService.chat(request, auth);
+
+        assertThat(response.suggestions()).hasSize(2);
+        assertThat(response.suggestions()).containsExactly("What is the decline rate?", "Compare to Q2?");
+    }
+
+    @Test
+    void chat_suggestionsEmptyOnMalformedJson() {
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("What is the drilling schedule?", null);
+        var plainAnswer = "I don't have that information.";
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn(plainAnswer);
+        when(dlpClient.analyze(eq(plainAnswer), anyList()))
+                .thenReturn(new DlpClient.DlpResult(plainAnswer, 0));
+
+        var response = ragService.chat(request, auth);
+
+        assertThat(response.suggestions()).isEmpty();
+        assertThat(response.answer()).isEqualTo(plainAnswer);
+    }
+
+    @Test
+    void chat_dlpCalledOnEachSuggestion() {
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("Tell me about reserves.", null);
+        var claudeJson = "{\"answer\":\"A\",\"suggestions\":[\"S1?\",\"S2?\"]}";
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(claudeService.complete(anyString(), anyList(), anyInt())).thenReturn(claudeJson);
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("cleaned", 0));
+
+        ragService.chat(request, auth);
+
+        verify(dlpClient, atLeast(3)).analyze(any(), anyList());
     }
 }
