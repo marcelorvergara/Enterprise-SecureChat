@@ -45,6 +45,18 @@ public class QdrantSearchClient {
         return (response == null || response.result() == null) ? List.of() : response.result();
     }
 
+    /**
+     * Fetches a single Qdrant point by ID and returns it as a SearchHit (score is 0 for direct lookups).
+     * Returns null if the point does not exist.
+     */
+    public SearchHit getPoint(String pointId) {
+        var response = restClient.get()
+                .uri("/collections/{col}/points/{id}", collection, pointId)
+                .retrieve()
+                .body(PointResponse.class);
+        return (response == null || response.result() == null) ? null : response.result();
+    }
+
     record SearchRequest(
             List<Float> vector,
             int limit,
@@ -53,6 +65,8 @@ public class QdrantSearchClient {
     ) {}
 
     record SearchResponse(List<SearchHit> result) {}
+
+    record PointResponse(SearchHit result) {}
 
     public record SearchHit(String id, float score, Map<String, Object> payload) {}
 }

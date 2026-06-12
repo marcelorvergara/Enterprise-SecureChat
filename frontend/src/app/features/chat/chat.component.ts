@@ -19,9 +19,12 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { CdkTextareaAutosize, TextFieldModule } from '@angular/cdk/text-field';
 import { AuthService } from '@auth0/auth0-angular';
+import { MatMenuModule } from '@angular/material/menu';
 import { ChatService, Message, SourceCitation } from '../../core/services/chat.service';
+import { ConversationExportService } from '../../core/services/conversation-export.service';
 import { SafeMarkdownPipe } from '../../shared/pipes/safe-markdown.pipe';
 import { BuUploadModalComponent } from './bu-upload-modal.component';
+import { SourcePreviewDialogComponent } from './source-preview-dialog.component';
 
 const ROLES_CLAIM = 'https://enpsecurechat.com/roles';
 const INGEST_ROLES = new Set(['bu-user', 'reserves-management', 'reserves-coordination']);
@@ -46,6 +49,7 @@ interface ChatMessage {
     MatTooltipModule,
     MatDialogModule,
     MatSnackBarModule,
+    MatMenuModule,
     TextFieldModule,
     SafeMarkdownPipe,
   ],
@@ -58,6 +62,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
 
   private readonly chatService = inject(ChatService);
+  private readonly exportService = inject(ConversationExportService);
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -67,6 +72,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   private authSub?: Subscription;
 
   canIngestDocuments = false;
+  conversationTitle = 'Conversation';
 
   openBuUpload(): void {
     this.dialog.open(BuUploadModalComponent, { width: '420px' });
@@ -120,6 +126,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.pendingRequest = undefined;
     this.messages = [];
     this.conversationId = undefined;
+    this.conversationTitle = 'Conversation';
     this.loading = false;
     this.pendingScroll = false;
     this.attachedFile = undefined;
@@ -127,6 +134,9 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
 
   private loadHistory(conversationId: string): void {
     this.loading = true;
+    this.chatService.getConversation(conversationId).subscribe({
+      next: conv => { this.conversationTitle = conv.title ?? 'Conversation'; },
+    });
     this.chatService.getMessages(conversationId).subscribe({
       next: (msgs: Message[]) => {
         this.messages = msgs.map(m => ({
@@ -239,14 +249,19 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     return Array.from(best.values());
   }
 
-  copySourceToClipboard(filename: string): void {
-    navigator.clipboard.writeText(filename).then(() => {
-      this.snackBar.open('Filename copied to clipboard', undefined, {
-        duration: 2000,
-        horizontalPosition: 'center',
-        verticalPosition: 'bottom',
-      });
+  openSourcePreview(source: SourceCitation): void {
+    this.dialog.open(SourcePreviewDialogComponent, {
+      width: '600px',
+      data: { conversationId: this.conversationId, citation: source },
     });
+  }
+
+  exportMarkdown(): void {
+    this.exportService.exportMarkdown(this.conversationTitle, this.messages);
+  }
+
+  exportPdf(): void {
+    this.exportService.exportPdf(this.conversationTitle, this.messages);
   }
 
   private scrollToBottom(): void {

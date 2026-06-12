@@ -93,6 +93,7 @@ public class RagService {
         // ── 5. Build source citations and chunk context ───────────────────────
         var sources = hits.stream()
                 .map(hit -> new SourceCitation(
+                        hit.id(),
                         payloadString(hit.payload(), "source_file"),
                         payloadString(hit.payload(), "subject_path"),
                         payloadInt(hit.payload(), "page_number"),
@@ -173,6 +174,7 @@ public class RagService {
 
         var sources = hits.stream()
                 .map(hit -> new SourceCitation(
+                        hit.id(),
                         payloadString(hit.payload(), "source_file"),
                         payloadString(hit.payload(), "subject_path"),
                         payloadInt(hit.payload(), "page_number"),

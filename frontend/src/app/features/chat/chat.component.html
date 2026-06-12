@@ -56,9 +56,9 @@
                   <mat-chip class="source-chip"
                             [matTooltip]="src.sourceFile + ' · ' + src.subjectPath + ' · score: ' + src.score.toFixed(2)"
                             matTooltipShowDelay="300"
-                            (click)="copySourceToClipboard(src.sourceFile)">
+                            (click)="openSourcePreview(src)">
                     <mat-icon matChipAvatar>description</mat-icon>
-                    <mat-icon class="chip-copy-icon">content_copy</mat-icon>
+                    <mat-icon class="chip-copy-icon">open_in_new</mat-icon>
                     <span class="chip-filename">{{ src.sourceFile }}</span>
                     @if (src.sheetName) {
                       <span class="chip-detail"> · {{ src.sheetName }}</span>
@@ -127,6 +127,24 @@
           matTooltip="Index a restricted document into your BU knowledge base">
           <mat-icon>cloud_upload</mat-icon>
         </button>
+      }
+      @if (messages.length > 0) {
+        <button class="composer-icon-btn" type="button"
+          [matMenuTriggerFor]="exportMenu"
+          aria-label="Export conversation"
+          matTooltip="Export conversation">
+          <mat-icon>download</mat-icon>
+        </button>
+        <mat-menu #exportMenu="matMenu">
+          <button mat-menu-item (click)="exportMarkdown()">
+            <mat-icon>description</mat-icon>
+            Download as Markdown
+          </button>
+          <button mat-menu-item (click)="exportPdf()">
+            <mat-icon>print</mat-icon>
+            Print as PDF
+          </button>
+        </mat-menu>
       }
       <span class="composer-hint">Enter ↵ to send &nbsp;·&nbsp; Shift+Enter for new line</span>
       <span class="char-counter"

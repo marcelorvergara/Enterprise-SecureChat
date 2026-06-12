@@ -8,11 +8,21 @@ export interface ChatRequest {
 }
 
 export interface SourceCitation {
+  chunkId: string;
   sourceFile: string;
   subjectPath: string;
   pageNumber?: number;
   sheetName?: string;
   score: number;
+}
+
+export interface SourcePreview {
+  chunkId: string;
+  chunkText: string;
+  sourceFile: string;
+  subjectPath: string;
+  pageNumber?: number;
+  sheetName?: string;
 }
 
 export interface ChatResponse {
@@ -51,6 +61,10 @@ export class ChatService {
     return this.http.get<Conversation[]>('/api/conversations');
   }
 
+  getConversation(conversationId: string): Observable<Conversation> {
+    return this.http.get<Conversation>(`/api/conversations/${conversationId}`);
+  }
+
   getMessages(conversationId: string): Observable<Message[]> {
     return this.http.get<Message[]>(`/api/conversations/${conversationId}/messages`);
   }
@@ -62,6 +76,10 @@ export class ChatService {
     form.append('file', file, file.name);
     // Do NOT set Content-Type manually — HttpClient sets it with the multipart boundary
     return this.http.post<ChatResponse>('/api/chat/verify', form);
+  }
+
+  getSourcePreview(conversationId: string, chunkId: string): Observable<SourcePreview> {
+    return this.http.get<SourcePreview>(`/api/conversations/${conversationId}/sources/${chunkId}`);
   }
 
   deleteConversation(id: string): Observable<void> {
