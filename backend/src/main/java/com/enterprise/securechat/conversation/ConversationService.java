@@ -74,6 +74,17 @@ public class ConversationService {
     }
 
     @Transactional
+    public void delete(UUID conversationId, String userSub) {
+        var conv = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+        if (!conv.getUserSub().equals(userSub)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+        conversationRepository.deleteById(conversationId);
+        // ON DELETE CASCADE in the DB handles messages automatically
+    }
+
+    @Transactional
     public void saveAssistantMessage(UUID conversationId, String content, List<SourceCitation> sources) {
         String sourcesJson = null;
         if (sources != null && !sources.isEmpty()) {

@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,13 +25,16 @@ public class ConversationController {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final ObjectMapper objectMapper;
+    private final ConversationService conversationService;
 
     public ConversationController(ConversationRepository conversationRepository,
                                   MessageRepository messageRepository,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  ConversationService conversationService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.objectMapper = objectMapper;
+        this.conversationService = conversationService;
     }
 
     @GetMapping("/conversations")
@@ -64,6 +68,15 @@ public class ConversationController {
                         m.getCreatedAt()))
                 .toList();
         return ResponseEntity.ok(views);
+    }
+
+    @DeleteMapping("/conversations/{id}")
+    public ResponseEntity<Void> deleteConversation(
+            @PathVariable UUID id,
+            Authentication auth) {
+        var jwt = (Jwt) auth.getPrincipal();
+        conversationService.delete(id, jwt.getSubject());
+        return ResponseEntity.noContent().build();
     }
 
     private List<SourceCitation> parseSources(String sourcesJson) {

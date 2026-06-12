@@ -1,5 +1,5 @@
 import { Component, inject, OnInit, OnDestroy } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { filter, take } from 'rxjs/operators';
 import { DatePipe } from '@angular/common';
@@ -11,9 +11,12 @@ import { MatListModule } from '@angular/material/list';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { AuthService } from '@auth0/auth0-angular';
 import { ChatService, Conversation } from './core/services/chat.service';
 import { ThemeService } from './core/services/theme.service';
+import { DeleteConversationDialogComponent } from './shared/dialogs/delete-conversation-dialog.component';
 
 const ROLES_CLAIM = 'https://enpsecurechat.com/roles';
 
@@ -33,6 +36,8 @@ const ROLES_CLAIM = 'https://enpsecurechat.com/roles';
     MatDividerModule,
     MatMenuModule,
     MatTooltipModule,
+    MatDialogModule,
+    MatSnackBarModule,
   ],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
@@ -40,6 +45,9 @@ const ROLES_CLAIM = 'https://enpsecurechat.com/roles';
 export class AppComponent implements OnInit, OnDestroy {
   private readonly chatService = inject(ChatService);
   private readonly auth = inject(AuthService);
+  private readonly dialog = inject(MatDialog);
+  private readonly snackBar = inject(MatSnackBar);
+  private readonly router = inject(Router);
   readonly themeService = inject(ThemeService);
   private readonly subs = new Subscription();
 
@@ -78,6 +86,28 @@ export class AppComponent implements OnInit, OnDestroy {
     this.chatService.getConversations().subscribe({
       next: convs => (this.conversations = convs),
       error: () => {},
+    });
+  }
+
+  deleteConversation(event: MouseEvent, conv: Conversation): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const ref = this.dialog.open(DeleteConversationDialogComponent, { width: '320px' });
+    ref.afterClosed().subscribe(confirmed => {
+      if (!confirmed) return;
+      this.chatService.deleteConversation(conv.id).subscribe({
+        next: () => {
+          this.conversations = this.conversations.filter(c => c.id !== conv.id);
+          if (this.router.url.includes(conv.id)) {
+            this.router.navigate(['/']);
+          }
+        },
+        error: () => {
+          this.snackBar.open('Failed to delete conversation. Please try again.', 'Dismiss', {
+            duration: 4000,
+          });
+        },
+      });
     });
   }
 

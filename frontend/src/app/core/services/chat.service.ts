@@ -64,6 +64,10 @@ export class ChatService {
     return this.http.post<ChatResponse>('/api/chat/verify', form);
   }
 
+  deleteConversation(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/conversations/${id}`);
+  }
+
   notifyConversationCreated(): void {
     this.conversationsRefresh$.next();
   }

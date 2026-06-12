@@ -16,6 +16,13 @@
           <mat-icon matListItemIcon>chat_bubble_outline</mat-icon>
           <span matListItemTitle class="conv-title">{{ conv.title || 'New conversation' }}</span>
           <span matListItemLine class="conv-date">{{ conv.createdAt | date:'M/d, h:mm a' }}</span>
+          <button mat-icon-button matListItemMeta class="delete-conv-btn"
+                  (click)="deleteConversation($event, conv)"
+                  matTooltip="Delete conversation"
+                  matTooltipPosition="left"
+                  aria-label="Delete conversation">
+            <mat-icon>delete_outline</mat-icon>
+          </button>
         </a>
       } @empty {
         <mat-list-item>

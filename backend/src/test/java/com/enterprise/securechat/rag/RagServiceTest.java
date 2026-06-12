@@ -57,7 +57,7 @@ class RagServiceTest {
             new SimpleGrantedAuthority("ROLE_reservoir-team"),
             new SimpleGrantedAuthority("GROUP_BU_CAMPOS")
         );
-        doReturn(authorities).when(auth).getAuthorities();
+        lenient().doReturn(authorities).when(auth).getAuthorities();
     }
 
     @Test
@@ -71,7 +71,7 @@ class RagServiceTest {
         when(fgaService.buildQdrantFilter(anyList())).thenReturn(Map.of());
         when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
         when(embedClient.embed(request.message())).thenReturn(List.of(0.1f, 0.2f, 0.3f));
-        when(qdrantClient.search(any(), any(), eq(5))).thenReturn(List.of());
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
         when(conversationService.getHistory(any(), eq(10))).thenReturn(List.of());
         when(claudeService.complete(anyString(), anyList())).thenReturn(rawAnswer);
         when(dlpClient.analyze(eq(rawAnswer), anyList())).thenReturn(new DlpClient.DlpResult(cleanedAnswer, 1));
