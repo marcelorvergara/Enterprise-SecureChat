@@ -314,6 +314,22 @@ README sections: Prerequisites, Quick Start, Architecture, Configuration Referen
 
 ---
 
+---
+
+## Post-Plan Implementation (Sprints 1–3)
+
+The original M0–M7 plan above was fully implemented. Three additional sprints were subsequently delivered in CLAUDE.md milestones M8–M17:
+
+| Sprint | Stories | Milestones | Outcome |
+|--------|---------|-----------|---------|
+| **Sprint 1 — User Trust & Mobility** | Source Deep-Link Previews (8 SP) · Export to PDF/Markdown (8 SP) | M13, M14 | Citation chips open Qdrant chunk previews; full conversation export to Markdown/Print-PDF |
+| **Sprint 2 — Compliance Moat** | Enterprise Document Classification Sync (13 SP) | M15 | Three-tier clearance (Public / Internal / Confidential) enforced at Qdrant layer via `classification_level` `must_not` clause — no application-layer filtering |
+| **Sprint 3 — Engagement & Insights** | AI Suggested Follow-ups (8 SP) · Admin Security Heatmap (13 SP) | M16, M17 | Structured JSON from Claude with DLP-scanned chip suggestions; Chart.js bar charts for FGA block frequency and DLP redaction density |
+
+Additional milestone detail, critical design constraints, and the full API contract are in [CLAUDE.md](../CLAUDE.md) and [spec.md](spec.md).
+
+---
+
 ## Verification — End-to-End Test
 
 1. `docker compose up -d`

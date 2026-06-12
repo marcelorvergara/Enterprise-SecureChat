@@ -122,13 +122,16 @@ Auth: Bearer JWT (Auth0). **Blocking — not streaming (see §8).**
   "answer": "The Q3 drilling plans focus on...",
   "conversation_id": "uuid",
   "sources": [
-    { "source_file": "drilling-plans.pdf", "subject_path": "operations/drilling", "chunk_index": 2, "score": 0.91 }
+    { "source_file": "drilling-plans.pdf", "subject_path": "operations/drilling",
+      "chunk_index": 2, "score": 0.91, "chunk_id": "qdrant-point-uuid" }
   ],
   "fga_applied": true,
-  "restricted_paths_count": 2,
-  "dlp_entities_redacted": 0
+  "dlp_entities_redacted": 0,
+  "suggestions": ["What are the Q4 targets?", "Which wells are highest priority?"]
 }
 ```
+
+Claude returns a structured JSON object `{"answer":"...","suggestions":[...]}` via a system-prompt instruction. `parseClaudeResponse()` extracts the JSON bounds before parsing; on any failure the raw string becomes the answer and `suggestions` is `[]`. Each suggestion is independently DLP-scanned before reaching the client — suggestions never bypass the DLP pipeline. `suggestions` is ephemeral (not persisted to `messages`). Max tokens for structured chat: 1536 (via explicit overload; default 1024 unchanged).
 
 #### `POST /api/chat/verify`
 Auth: Bearer JWT (Auth0). **Multipart form-data.** Accepts a file alongside a question and cross-references it against the knowledge base.
@@ -171,6 +174,35 @@ Returns all roles and their restriction lists.
 ```
 
 #### `DELETE /api/admin/roles/{role}/restrictions/{encodedPath}` _(admin role required)_
+
+#### `GET /api/admin/metrics/security-heatmap` _(admin role required)_
+Returns aggregated security metrics — no raw prompt text is ever read or returned (Constraint #4 compliant).
+```json
+{
+  "topRestrictedPaths": [
+    { "path": "bu/santos/reserves", "hitCount": 42 },
+    { "path": "bu/campos",          "hitCount": 17 }
+  ],
+  "dlpDensityByDay": [
+    { "day": "2026-06-12", "totalRedacted": 8 },
+    { "day": "2026-06-11", "totalRedacted": 3 }
+  ]
+}
+```
+`topRestrictedPaths` is aggregated from `restriction_audit_log.restricted_paths` via `unnest() + COUNT(*)` (top 20). `dlpDensityByDay` is aggregated from `messages.dlp_redacted` via `DATE_TRUNC('day') + SUM` (last 30 days, assistant rows only).
+
+#### `GET /api/conversations/{id}/sources/{chunkId}` _(JWT required, owner only)_
+Returns the raw chunk payload for a source citation. Performs ownership check (403 if caller is not conversation owner) and FGA validation (403 if chunk `ancestor_paths` includes a path restricted for the caller's roles, or if `classification_level` exceeds the caller's clearance). Used by the `SourcePreviewDialogComponent` to render the full chunk text.
+```json
+{
+  "chunkText":    "...",
+  "sourceFile":   "drilling-plans.pdf",
+  "subjectPath":  "operations/drilling",
+  "pageNumber":   3,
+  "sheetName":    null,
+  "chunkIndex":   2
+}
+```
 
 ### Internal Endpoints (Docker `internal` network only)
 
