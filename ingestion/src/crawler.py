@@ -306,7 +306,12 @@ def download(url: str) -> tuple[bytes | None, str | None, str | None]:
         return None, None, None
 
 
-def post_to_ingest(filename: str, content: bytes, bu_path: str) -> bool:
+def post_to_ingest(
+    filename: str,
+    content: bytes,
+    bu_path: str,
+    classification_level: str = "Internal",
+) -> bool:
     """POST file bytes to the /ingest endpoint. Returns True on success."""
     ext = Path(filename).suffix.lower()
     if ext == ".pdf":
@@ -321,7 +326,7 @@ def post_to_ingest(filename: str, content: bytes, bu_path: str) -> bool:
         resp = requests.post(
             INGEST_URL,
             files={"file": (filename, content, mime)},
-            data={"bu_path": bu_path},
+            data={"bu_path": bu_path, "classification_level": classification_level},
             headers=auth_headers,
             timeout=300,  # scanned PDFs need Tesseract OCR per page — allow 5 min
         )
@@ -489,7 +494,8 @@ def _run(mode: str = "files", max_depth_html: int = 4, max_depth_files: int = 2)
                 is_new = state_key not in state
                 filename = f"{slug}.txt"
 
-                if post_to_ingest(filename, text.encode(), "corporate-answers"):
+                if post_to_ingest(filename, text.encode(), "corporate-answers",
+                                  classification_level="Internal"):
                     new_count += 1 if is_new else 0
                     updated_count += 0 if is_new else 1
                     state[state_key] = sha
@@ -571,8 +577,10 @@ def _run(mode: str = "files", max_depth_html: int = 4, max_depth_files: int = 2)
 
                 is_new = stored_sha is None
                 bu_path = subject_path_for(url)
+                from .classifier import classify_by_subject_path
+                cl = classify_by_subject_path(bu_path)
 
-                if post_to_ingest(filename, content, bu_path):
+                if post_to_ingest(filename, content, bu_path, classification_level=cl):
                     new_count += 1 if is_new else 0
                     updated_count += 0 if is_new else 1
                     new_entry = {"sha": sha, "size": len(content)}

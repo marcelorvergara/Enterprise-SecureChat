@@ -1,10 +1,11 @@
 """Tests for qdrant_writer helpers — especially build_ancestor_paths."""
 
 import uuid
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from src.qdrant_writer import build_ancestor_paths
+from src.qdrant_writer import build_ancestor_paths, upsert_chunks
 
 
 class TestBuildAncestorPaths:
@@ -68,3 +69,52 @@ class TestBuildAncestorPaths:
         id_chunk0 = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:0"))
         id_chunk1 = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:1"))
         assert id_chunk0 != id_chunk1
+
+
+class TestUpsertChunks:
+    def test_classification_level_written_to_payload(self):
+        mock_client = MagicMock()
+        chunk = {
+            "chunk_index": 0,
+            "text": "Campo Pré-Sal production data.",
+            "vector": [0.1] * 384,
+            "page_number": 1,
+            "sheet_name": None,
+        }
+        upsert_chunks(
+            client=mock_client,
+            collection="enterprise_knowledge",
+            doc_id="doc-test-001",
+            subject_path="bar-questions",
+            source_file="anp-2026-audit.pdf",
+            source_type="pdf",
+            chunks=[chunk],
+            ingested_at="2026-06-12T00:00:00+00:00",
+            classification_level="Confidential",
+        )
+        mock_client.upsert.assert_called_once()
+        points = mock_client.upsert.call_args.kwargs["points"]
+        assert len(points) == 1
+        assert points[0].payload["classification_level"] == "Confidential"
+
+    def test_classification_level_defaults_to_internal(self):
+        mock_client = MagicMock()
+        chunk = {
+            "chunk_index": 0,
+            "text": "Standard reserves update.",
+            "vector": [0.2] * 384,
+            "page_number": None,
+            "sheet_name": None,
+        }
+        upsert_chunks(
+            client=mock_client,
+            collection="enterprise_knowledge",
+            doc_id="doc-test-002",
+            subject_path="bu/santos/reserves",
+            source_file="san-field-update.pdf",
+            source_type="pdf",
+            chunks=[chunk],
+            ingested_at="2026-06-12T00:00:00+00:00",
+        )
+        points = mock_client.upsert.call_args.kwargs["points"]
+        assert points[0].payload["classification_level"] == "Internal"

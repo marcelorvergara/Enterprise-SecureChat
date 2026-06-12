@@ -20,20 +20,25 @@ documents:
   # ── BU Santos ────────────────────────────────────────────────────────────────
   - path: data/bu/santos/reserves/san-field-update.pdf
     subject_path: bu/santos/reserves
+    classification_level: Internal
 
   # ── BU Campos ────────────────────────────────────────────────────────────────
   - path: data/bu/campos/reserves/alb-field-update.pdf
     subject_path: bu/campos/reserves
+    classification_level: Internal
 
   # ── BU Solimoes ───────────────────────────────────────────────────────────────
   - path: data/bu/solimoes/reserves/sol-field-update.pdf
     subject_path: bu/solimoes/reserves
+    classification_level: Internal
 
   # ── Regulatory / BAR ─────────────────────────────────────────────────────────
   # CONFIDENTIAL // RESERVES COORDINATION ONLY — blocked for reservoir-team
   - path: data/regulatory/bar-questions/anp-2026-audit.pdf
     subject_path: bar-questions
+    classification_level: Confidential
 
   # ── Corporate Answers / BAR ─────────────────────────────────────────────────────────
   - path: data/corporate-answers/anp-vs-sec-certification-guide.pdf
     subject_path: corporate-answers
+    classification_level: Internal

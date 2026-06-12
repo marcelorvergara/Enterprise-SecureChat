@@ -133,6 +133,7 @@ public class ConversationController {
                 .filter(a -> a.startsWith("GROUP_"))
                 .toList();
 
+        // ── FGA path check: ancestor_paths hierarchy ──────────────────────────
         var restrictedPaths = fgaService.getRestrictedPaths(roles, groups);
         if (!restrictedPaths.isEmpty()) {
             @SuppressWarnings("unchecked")
@@ -140,6 +141,15 @@ public class ConversationController {
             boolean blocked = ancestorPaths.stream()
                     .anyMatch(ap -> restrictedPaths.stream().anyMatch(ap::startsWith));
             if (blocked) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+        }
+
+        // ── Clearance check: classification_level ─────────────────────────────
+        var blockedClassifications = fgaService.getBlockedClassifications(roles);
+        if (!blockedClassifications.isEmpty()) {
+            var chunkClassification = (String) hit.payload().get("classification_level");
+            if (chunkClassification != null && blockedClassifications.contains(chunkClassification)) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
             }
         }

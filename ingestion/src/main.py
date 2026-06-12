@@ -32,6 +32,7 @@ def ingest_document(
     file_path: str,
     subject_path: str,
     ingested_at: str,
+    classification_level: str | None = None,
 ) -> int:
     """Parse, chunk, embed, and write a single document. Returns chunk count."""
     ext = Path(file_path).suffix.lower()
@@ -50,6 +51,10 @@ def ingest_document(
     if not raw_pages:
         print(f"  [SKIP] no text extracted from {file_path}")
         return 0
+
+    if classification_level is None:
+        from .classifier import extract_classification
+        classification_level = extract_classification(file_path)
 
     all_chunks: list[dict] = []
     for page in raw_pages:
@@ -78,6 +83,7 @@ def ingest_document(
         source_type=ext.lstrip("."),
         chunks=enriched,
         ingested_at=ingested_at,
+        classification_level=classification_level,
     )
     return len(enriched)
 
@@ -103,13 +109,17 @@ def main() -> None:
     for doc in documents:
         file_path: str = doc["path"]
         subject_path: str = doc["subject_path"]
+        classification_level: str | None = doc.get("classification_level")
 
         if not Path(file_path).exists():
             print(f"[SKIP] file not found: {file_path}")
             continue
 
         print(f"[INGEST] {file_path} → {subject_path}")
-        count = ingest_document(client, collection, file_path, subject_path, ingested_at)
+        count = ingest_document(
+            client, collection, file_path, subject_path, ingested_at,
+            classification_level=classification_level,
+        )
         if count:
             print(f"  → {count} chunks written")
             total_chunks += count

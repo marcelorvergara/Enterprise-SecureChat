@@ -58,6 +58,8 @@ class RagServiceTest {
             new SimpleGrantedAuthority("GROUP_BU_CAMPOS")
         );
         lenient().doReturn(authorities).when(auth).getAuthorities();
+        // Default clearance stub — individual tests override where needed
+        lenient().when(fgaService.getBlockedClassifications(anyList())).thenReturn(List.of());
     }
 
     @Test
@@ -68,7 +70,7 @@ class RagServiceTest {
         var cleanedAnswer = "Reserves are [REDACTED].";
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
-        when(fgaService.buildQdrantFilter(anyList())).thenReturn(Map.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
         when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
         when(embedClient.embed(request.message())).thenReturn(List.of(0.1f, 0.2f, 0.3f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
@@ -90,7 +92,7 @@ class RagServiceTest {
         var restrictedPaths = List.of("bar-questions");
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(restrictedPaths);
-        when(fgaService.buildQdrantFilter(restrictedPaths)).thenReturn(
+        when(fgaService.buildQdrantFilter(eq(restrictedPaths), anyList())).thenReturn(
             Map.of("must_not", List.of(Map.of("key", "ancestor_paths",
                 "match", Map.of("any", List.of("bar-questions")))))
         );
@@ -112,7 +114,7 @@ class RagServiceTest {
         var request = new ChatRequest("What is our drilling schedule?", null);
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
-        when(fgaService.buildQdrantFilter(List.of())).thenReturn(Map.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
         when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
@@ -131,7 +133,7 @@ class RagServiceTest {
         var request = new ChatRequest("Hello", null);
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
-        when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
+        when(fgaService.buildQdrantFilter(any(), any())).thenReturn(Map.of());
         when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
@@ -158,7 +160,7 @@ class RagServiceTest {
         var request = new ChatRequest("Sensitive reserves question.", null);
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
-        when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
+        when(fgaService.buildQdrantFilter(any(), any())).thenReturn(Map.of());
         when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
@@ -181,7 +183,7 @@ class RagServiceTest {
         ));
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(restrictedPaths);
-        when(fgaService.buildQdrantFilter(restrictedPaths)).thenReturn(expectedFilter);
+        when(fgaService.buildQdrantFilter(eq(restrictedPaths), anyList())).thenReturn(expectedFilter);
         when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), eq(expectedFilter), anyInt())).thenReturn(List.of());
@@ -201,7 +203,7 @@ class RagServiceTest {
         var request = new ChatRequest("Follow-up question.", existingConvId);
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
-        when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
+        when(fgaService.buildQdrantFilter(any(), any())).thenReturn(Map.of());
         when(conversationService.getOrCreate(existingConvId, USER_SUB)).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
@@ -228,7 +230,7 @@ class RagServiceTest {
         var rawAnswer = "Total proven reserves: 450 MMboe.";
 
         when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
-        when(fgaService.buildQdrantFilter(any())).thenReturn(Map.of());
+        when(fgaService.buildQdrantFilter(any(), any())).thenReturn(Map.of());
         when(conversationService.getOrCreate(any(), any())).thenReturn(conversation);
         when(embedClient.embed(any())).thenReturn(List.of(0.1f));
         when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());

@@ -164,4 +164,51 @@ class FgaServiceTest {
 
         assertThat((List<String>) match.get("any")).contains("bu/santos");
     }
+
+    // ── Clearance: getBlockedClassifications ────────────────────────────────
+
+    @Test
+    void getBlockedClassifications_employeeIsBlockedFromConfidential() {
+        var blocked = fgaService.getBlockedClassifications(List.of("employee"));
+        assertThat(blocked).containsExactly("Confidential");
+    }
+
+    @Test
+    void getBlockedClassifications_reservesCoordinationSeesAllLevels() {
+        var blocked = fgaService.getBlockedClassifications(List.of("reserves-coordination"));
+        assertThat(blocked).isEmpty();
+    }
+
+    @Test
+    void getBlockedClassifications_noRolesIsPublicBlockedFromInternalAndConfidential() {
+        var blocked = fgaService.getBlockedClassifications(List.of());
+        assertThat(blocked).containsExactlyInAnyOrder("Internal", "Confidential");
+    }
+
+    // ── Qdrant filter: combined path + classification ────────────────────────
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void buildQdrantFilter_classificationAddsSecondMustNotCondition() {
+        var filter = fgaService.buildQdrantFilter(
+                List.of("bu/santos"), List.of("Confidential"));
+
+        var mustNot = (List<Map<String, Object>>) filter.get("must_not");
+        assertThat(mustNot).hasSize(2);
+
+        var clCondition = mustNot.get(1);
+        assertThat(clCondition.get("key")).isEqualTo("classification_level");
+        var match = (Map<String, Object>) clCondition.get("match");
+        assertThat((List<String>) match.get("any")).containsExactly("Confidential");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void buildQdrantFilter_oldOverloadProducesOnlyAncestorPathsCondition() {
+        var filter = fgaService.buildQdrantFilter(List.of("bar-questions"));
+
+        var mustNot = (List<Map<String, Object>>) filter.get("must_not");
+        assertThat(mustNot).hasSize(1);
+        assertThat(mustNot.get(0).get("key")).isEqualTo("ancestor_paths");
+    }
 }

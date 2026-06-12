@@ -114,11 +114,16 @@ class IngestResponse(BaseModel):
 async def ingest(
     file: UploadFile = File(...),
     bu_path: str = Form(...),
+    classification_level: str | None = Form(default=None),
 ) -> IngestResponse:
     """Permanently index a BU-uploaded document into Qdrant under the given bu_path.
 
     The bu_path (e.g. "bu/campos/reserves") is set by the Spring Boot backend
     based on the user's Keycloak group — never trusted from the client directly.
+
+    classification_level is optional; when omitted the ingestion service extracts
+    it from the document's embedded metadata so BU self-uploads are never
+    user-controllable.
     """
     filename = file.filename or "upload"
     ext = Path(filename).suffix.lower()
@@ -133,6 +138,9 @@ async def ingest(
 
     try:
         pages = parse_fn(tmp_path)
+        if classification_level is None:
+            from src.classifier import extract_classification
+            classification_level = extract_classification(tmp_path)
     finally:
         os.unlink(tmp_path)
 
@@ -177,6 +185,7 @@ async def ingest(
         source_type=ext.lstrip("."),
         chunks=enriched,
         ingested_at=datetime.now(timezone.utc).isoformat(),
+        classification_level=classification_level,
     )
 
     return IngestResponse(status="indexed", chunks=len(enriched), path=bu_path)

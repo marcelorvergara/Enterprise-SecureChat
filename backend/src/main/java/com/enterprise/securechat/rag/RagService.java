@@ -74,9 +74,10 @@ public class RagService {
                 .filter(a -> a.startsWith("GROUP_"))
                 .toList();
 
-        // ── 1. FGA — compute Qdrant must_not filter ──────────────────────────
-        List<String> restrictedPaths = fgaService.getRestrictedPaths(roles, groups);
-        Map<String, Object> qdrantFilter = fgaService.buildQdrantFilter(restrictedPaths);
+        // ── 1. FGA — compute Qdrant must_not filter (path + clearance) ─────────
+        List<String> restrictedPaths        = fgaService.getRestrictedPaths(roles, groups);
+        List<String> blockedClassifications = fgaService.getBlockedClassifications(roles);
+        Map<String, Object> qdrantFilter    = fgaService.buildQdrantFilter(restrictedPaths, blockedClassifications);
 
         // ── 2. Conversation — get or create ──────────────────────────────────
         var conversation = conversationService.getOrCreate(request.conversationId(), userSub);
@@ -160,8 +161,9 @@ public class RagService {
                 .filter(a -> a.startsWith("GROUP_"))
                 .toList();
 
-        List<String> restrictedPaths = fgaService.getRestrictedPaths(roles, groups);
-        Map<String, Object> qdrantFilter = fgaService.buildQdrantFilter(restrictedPaths);
+        List<String> restrictedPaths        = fgaService.getRestrictedPaths(roles, groups);
+        List<String> blockedClassifications = fgaService.getBlockedClassifications(roles);
+        Map<String, Object> qdrantFilter    = fgaService.buildQdrantFilter(restrictedPaths, blockedClassifications);
 
         var conversation = conversationService.getOrCreate(request.conversationId(), userSub);
         if (conversation.getTitle() == null) {

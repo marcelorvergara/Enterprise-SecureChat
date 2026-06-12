@@ -27,6 +27,27 @@ public class FgaService {
         "admin", "reserves-management", "reserves-coordination"
     );
 
+    // ── Clearance hierarchy ──────────────────────────────────────────────────
+    // Tier values are ordinal: a user with tier N can see levels 0…N.
+    static final int TIER_PUBLIC       = 0;
+    static final int TIER_INTERNAL     = 1;
+    static final int TIER_CONFIDENTIAL = 2;
+
+    private static final Map<String, Integer> ROLE_CLEARANCE = Map.of(
+        "admin",                 TIER_CONFIDENTIAL,
+        "reserves-coordination", TIER_CONFIDENTIAL,
+        "reserves-management",   TIER_CONFIDENTIAL,
+        "reservoir-team",        TIER_INTERNAL,
+        "bu-user",               TIER_INTERNAL,
+        "employee",              TIER_INTERNAL
+    );
+
+    private static final Map<String, Integer> LEVEL_TIER = Map.of(
+        "Public",       TIER_PUBLIC,
+        "Internal",     TIER_INTERNAL,
+        "Confidential", TIER_CONFIDENTIAL
+    );
+
     private final RoleRestrictionRepository restrictionRepository;
     private final String[] knownBus;
 
@@ -61,25 +82,68 @@ public class FgaService {
     }
 
     /**
-     * Builds a Qdrant filter map that excludes any document whose ancestor_paths array
-     * contains any of the restricted paths.
+     * Returns the classification levels that are blocked for the given roles.
      *
-     * Restricting "bu/santos" automatically blocks bu/santos/reserves, bu/santos/bar-questions,
-     * etc. because every descendant stores all ancestor paths in ancestor_paths[].
+     * A role's clearance tier is looked up from ROLE_CLEARANCE (unrecognised roles
+     * default to TIER_PUBLIC). The user's effective clearance is the maximum tier
+     * across all their roles. Any classification level with a tier above that maximum
+     * is blocked.
      *
-     * Returns an empty map when there are no restrictions (all docs visible).
+     * Examples:
+     *   ["employee"]              → ["Confidential"]         (Internal tier — blocks only Confidential)
+     *   ["reserves-coordination"] → []                       (Confidential tier — nothing blocked)
+     *   []                        → ["Internal","Confidential"] (no roles — Public tier only)
+     */
+    public List<String> getBlockedClassifications(List<String> roles) {
+        int maxTier = (roles == null || roles.isEmpty()) ? TIER_PUBLIC :
+            roles.stream()
+                 .mapToInt(r -> ROLE_CLEARANCE.getOrDefault(r, TIER_PUBLIC))
+                 .max()
+                 .orElse(TIER_PUBLIC);
+        return LEVEL_TIER.entrySet().stream()
+                .filter(e -> e.getValue() > maxTier)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    /**
+     * Builds a Qdrant filter map combining subject-path restrictions (FGA hierarchy)
+     * with classification-level clearance restrictions (clearance hierarchy).
+     *
+     * Both dimensions are expressed as must_not conditions applied at the Qdrant
+     * search layer — never in Java application code (Constraint #3).
+     *
+     * Returns an empty map when there are no restrictions of either kind.
+     */
+    public Map<String, Object> buildQdrantFilter(
+            List<String> restrictedPaths,
+            List<String> blockedClassifications) {
+        var mustNot = new ArrayList<>();
+        if (restrictedPaths != null) {
+            restrictedPaths.forEach(path ->
+                mustNot.add(Map.of(
+                    "key", "ancestor_paths",
+                    "match", Map.of("any", List.of(path))
+                )));
+        }
+        if (blockedClassifications != null && !blockedClassifications.isEmpty()) {
+            mustNot.add(Map.of(
+                "key",   "classification_level",
+                "match", Map.of("any", blockedClassifications)
+            ));
+        }
+        if (mustNot.isEmpty()) return Collections.emptyMap();
+        return Map.of("must_not", List.copyOf(mustNot));
+    }
+
+    /**
+     * Single-argument overload for backward compatibility with existing callers
+     * and tests that predate the classification clearance layer.
+     *
+     * Delegates to the two-argument form with no classification restrictions.
      */
     public Map<String, Object> buildQdrantFilter(List<String> restrictedPaths) {
-        if (restrictedPaths == null || restrictedPaths.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        var mustNot = restrictedPaths.stream()
-            .map(path -> (Object) Map.of(
-                "key", "ancestor_paths",
-                "match", Map.of("any", List.of(path))
-            ))
-            .toList();
-        return Map.of("must_not", mustNot);
+        return buildQdrantFilter(restrictedPaths, List.of());
     }
 
     /**

@@ -30,7 +30,7 @@ def ensure_collection(client: QdrantClient, collection: str) -> None:
         )
     # Payload indexes are required for filter-based deletes and FGA filtering.
     # create_payload_index is idempotent — safe to call on existing collections.
-    for field in ("doc_id", "ancestor_paths"):
+    for field in ("doc_id", "ancestor_paths", "classification_level"):
         client.create_payload_index(
             collection_name=collection,
             field_name=field,
@@ -70,6 +70,7 @@ def upsert_chunks(
     source_type: str,
     chunks: list[dict],
     ingested_at: str,
+    classification_level: str = "Internal",
 ) -> None:
     """Write a batch of chunks into Qdrant with full FGA metadata.
 
@@ -92,6 +93,7 @@ def upsert_chunks(
                 "sheet_name": chunk.get("sheet_name"),
                 "ingested_at": ingested_at,
                 "doc_id": doc_id,
+                "classification_level": classification_level,
             },
         )
         for chunk in chunks
