@@ -110,6 +110,7 @@ CREATE TABLE messages (
 | POST | `/api/chat` | JWT | RAG query (main endpoint) |
 | GET | `/api/conversations` | JWT | List user's conversations |
 | GET | `/api/conversations/{id}/messages` | JWT | Conversation history |
+| DELETE | `/api/conversations/{id}` | JWT | Delete a conversation (owner-only; cascades to messages) |
 | GET | `/api/admin/roles` | admin JWT | List all roles + restrictions |
 | POST | `/api/admin/roles/{role}/restrictions` | admin JWT | Add restriction |
 | DELETE | `/api/admin/roles/{role}/restrictions/{path}` | admin JWT | Remove restriction |

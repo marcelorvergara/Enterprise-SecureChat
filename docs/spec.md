@@ -155,6 +155,13 @@ Returns list of conversations for the authenticated user.
 #### `GET /api/conversations/{id}/messages`
 Returns message history for a conversation.
 
+#### `DELETE /api/conversations/{id}`
+Auth: Bearer JWT (Auth0). Deletes the conversation and all its messages. Returns **204 No Content**.
+
+- Returns **403 Forbidden** if the authenticated user does not own the conversation.
+- Returns **404 Not Found** if the conversation does not exist.
+- Message deletion is handled by the database `ON DELETE CASCADE` constraint — no explicit message deletion in application code.
+
 #### `GET /api/admin/roles` _(admin role required)_
 Returns all roles and their restriction lists.
 
