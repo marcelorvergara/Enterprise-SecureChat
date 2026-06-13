@@ -7,7 +7,8 @@ import {
   ViewChild,
   inject,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
+import { Location } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -65,7 +66,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
   private readonly exportService = inject(ConversationExportService);
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly dialog = inject(MatDialog);
   private readonly snackBar = inject(MatSnackBar);
   private routeSub?: Subscription;
@@ -101,6 +102,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     });
     this.routeSub = this.route.paramMap.subscribe(params => {
       const id = params.get('id') ?? undefined;
+      if (id === this.conversationId) return;
       this.reset();
       if (id) {
         this.conversationId = id;
@@ -219,7 +221,7 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
         this.conversationId = response.conversationId;
         if (wasNew) {
           this.chatService.notifyConversationCreated();
-          this.router.navigate(['/c', response.conversationId], { replaceUrl: true });
+          this.location.replaceState(`/c/${response.conversationId}`);
         }
         this.messages.push({
           role: 'assistant',

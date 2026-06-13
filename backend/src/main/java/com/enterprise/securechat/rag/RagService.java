@@ -273,11 +273,13 @@ public class RagService {
     // Unit rule closes the bare-number DLP gap: a number like "450,000" with no unit
     // bypasses the FINANCIAL_FIGURE recognizer, but "450,000 MMboe" is caught by OG_VOLUMES.
     private static final String JSON_FORMAT_INSTRUCTION =
-        "\n\nRESPONSE FORMAT: Return ONLY a JSON object — no markdown fences, no extra text:\n"
-      + "{\"answer\": \"<your full answer, escape internal quotes>\", "
-      + "\"suggestions\": [\"<follow-up 1>?\", \"<follow-up 2>?\", \"<follow-up 3>?\"]}\n"
-      + "Suggestions must be specific, contextual follow-ups based solely on your answer. "
-      + "Use 2-3 questions. If unanswerable, still return valid JSON with empty suggestions array.";
+        "\n\n===MANDATORY RESPONSE FORMAT===\n"
+      + "You MUST respond with ONLY a valid JSON object. No markdown, no code fences, no prose before or after.\n"
+      + "The JSON must have exactly two keys:\n"
+      + "  \"answer\": your complete answer as a plain string (use \\n for newlines, escape internal double-quotes as \\\")\n"
+      + "  \"suggestions\": an array of 2-3 specific follow-up questions as strings\n"
+      + "Example: {\"answer\": \"The Santos Basin contains...\", \"suggestions\": [\"What is the production rate?\", \"Which operator holds the largest stake?\"]}\n"
+      + "Do NOT wrap in markdown fences. Do NOT add any text outside the JSON object.";
 
     private static final String OG_BASE_INSTRUCTIONS =
         "You are an Oil & Gas enterprise knowledge assistant operating under ANP compliance rules.\n"
