@@ -8,6 +8,14 @@
 
 E&P SecureChat transforms how Exploration & Production teams interact with their institutional knowledge. Analysts, reservoir engineers, BU managers, and compliance officers all share a single conversational interface — yet each sees precisely what their role permits, enforced not by application logic that can be bypassed, but by a cryptographic path filter applied inside the vector database before the language model is ever invoked.
 
+<br/>
+
+<p align="center">
+  <img src="frontend/src/assets/landing_page.png" alt="E&P SecureChat Enterprise Landing Page" width="100%">
+</p>
+
+<br/>
+
 ### Key Capabilities
 
 **Local-First to Serverless RAG**
