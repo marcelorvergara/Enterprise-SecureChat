@@ -70,7 +70,7 @@ public class ConversationService {
 
     @Transactional
     public void saveUserMessage(UUID conversationId, String content) {
-        messageRepository.save(new Message(conversationId, "user", content, null));
+        messageRepository.save(new Message(conversationId, "user", content, null, 0));
     }
 
     @Transactional
@@ -85,7 +85,7 @@ public class ConversationService {
     }
 
     @Transactional
-    public void saveAssistantMessage(UUID conversationId, String content, List<SourceCitation> sources) {
+    public void saveAssistantMessage(UUID conversationId, String content, List<SourceCitation> sources, int dlpRedacted) {
         String sourcesJson = null;
         if (sources != null && !sources.isEmpty()) {
             try {
@@ -94,6 +94,6 @@ public class ConversationService {
                 sourcesJson = "[]";
             }
         }
-        messageRepository.save(new Message(conversationId, "assistant", content, sourcesJson));
+        messageRepository.save(new Message(conversationId, "assistant", content, sourcesJson, dlpRedacted));
     }
 }

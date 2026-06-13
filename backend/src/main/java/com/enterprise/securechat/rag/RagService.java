@@ -136,7 +136,7 @@ public class RagService {
 
         // ── 9. Persist — cleaned answer only; suggestions are ephemeral UI hints ──
         conversationService.saveUserMessage(conversation.getId(), request.message());
-        conversationService.saveAssistantMessage(conversation.getId(), dlpAnswer.cleanedText(), sources);
+        conversationService.saveAssistantMessage(conversation.getId(), dlpAnswer.cleanedText(), sources, totalRedacted);
 
         // ── 10. Audit log — SHA-256 of prompt, never raw text ────────────────
         auditService.log(userSub, roles, restrictedPaths, request.message());
@@ -225,7 +225,7 @@ public class RagService {
 
         var userMessageContent = request.message() + " [Attached: " + documentFilename + "]";
         conversationService.saveUserMessage(conversation.getId(), userMessageContent);
-        conversationService.saveAssistantMessage(conversation.getId(), dlpAnswer.cleanedText(), sources);
+        conversationService.saveAssistantMessage(conversation.getId(), dlpAnswer.cleanedText(), sources, totalRedacted);
 
         auditService.log(userSub, roles, restrictedPaths, request.message());
 

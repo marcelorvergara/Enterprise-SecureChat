@@ -29,16 +29,20 @@ public class Message {
     @Column(columnDefinition = "jsonb")
     private String sources;
 
+    @Column(name = "dlp_redacted")
+    private int dlpRedacted;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     public Message() {}
 
-    public Message(UUID conversationId, String role, String content, String sources) {
+    public Message(UUID conversationId, String role, String content, String sources, int dlpRedacted) {
         this.conversationId = conversationId;
         this.role = role;
         this.content = content;
         this.sources = sources;
+        this.dlpRedacted = dlpRedacted;
     }
 
     public UUID getId() { return id; }
@@ -46,5 +50,6 @@ public class Message {
     public String getRole() { return role; }
     public String getContent() { return content; }
     public String getSources() { return sources; }
+    public int getDlpRedacted() { return dlpRedacted; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
 }
