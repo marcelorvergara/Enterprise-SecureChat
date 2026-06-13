@@ -35,7 +35,7 @@ A built-in BFS crawler targets the ANP Exploração e Produção portal (`gov.br
 
 ![](<docs/print bu-user.png>)
 
-A BU analyst authenticated as `erica` queries the Santos basin asset valuation. The Angular 17 Material interface presents a persistent sidebar with full conversation history on the left and a clean chat workspace on the right. The response is rendered as structured Markdown — numbered sections for Reserves Volumes, Investment Projections, Recovery Improvements, and Key Observations — sourced from the document `BU-SANTOS-SAN-RESERVES-2026 (Classification: RESTRICTED / SANTOS RESERVES MANAGEMENT)`.
+A BU analyst authenticated as `alice` queries the Santos basin asset valuation. The Angular 17 Material interface presents a persistent sidebar with full conversation history on the left and a clean chat workspace on the right. The response is rendered as structured Markdown — numbered sections for Reserves Volumes, Investment Projections, Recovery Improvements, and Key Observations — sourced from the document `BU-SANTOS-SAN-RESERVES-2026 (Classification: RESTRICTED / SANTOS RESERVES MANAGEMENT)`.
 
 Notice the orange-highlighted spans throughout the answer: those are **live DLP redactions**. The raw Claude output contained explicit financial figures and reserve volumes; the Presidio post-processor intercepted them before the response reached the browser, replacing each entity with a highlighted `[REDACTED]` marker. The BU user receives the structural insight without exposure to the numerical data their role does not permit.
 
