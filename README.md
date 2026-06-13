@@ -102,7 +102,6 @@ E&P SecureChat enforces data protection at three independent layers. Disabling a
 The diagram below traces a complete user request from browser to response, including both the fast path (text-only chat) and the ephemeral document verification path.
 
 ```mermaid
-
 flowchart TD
     classDef user fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
     classDef frontend fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
@@ -181,8 +180,8 @@ flowchart TD
     DLPClient <-->|Presidio analysis| Presidio
     DLPClient -->|15. Clean answer| UI
     UI -->|16. Display| User
-
 ```
+
 ---
 
 ## Technical Stack & Specifications
