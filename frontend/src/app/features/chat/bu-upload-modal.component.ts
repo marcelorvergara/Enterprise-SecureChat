@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -59,7 +59,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
             <mat-icon>error_outline</mat-icon>
           </div>
           <p class="result-title">Indexing failed</p>
-          <p class="result-desc">Please try again or contact your administrator.</p>
+          <p class="result-desc">{{ errorMessage }}</p>
         </div>
       }
     </mat-dialog-content>
@@ -195,6 +195,7 @@ export class BuUploadModalComponent {
   selectedFile: File | null = null;
   uploading = false;
   result: 'success' | 'error' | null = null;
+  errorMessage = 'Please try again or contact your administrator.';
 
   constructor(
     private readonly dialogRef: MatDialogRef<BuUploadModalComponent>,
@@ -219,9 +220,14 @@ export class BuUploadModalComponent {
         this.uploading = false;
         this.result = 'success';
       },
-      error: () => {
+      error: (err: HttpErrorResponse) => {
         this.uploading = false;
         this.result = 'error';
+        this.errorMessage = err.status === 400
+          ? 'Your account is not assigned to a Business Unit. Ask your administrator to add a BU group (e.g. bu-santos) to your Auth0 profile.'
+          : err.status === 403
+          ? 'You do not have permission to index documents.'
+          : 'Indexing failed. Please try again or contact your administrator.';
       },
     });
   }
