@@ -1,0 +1,90 @@
+<mat-sidenav-container class="app-container">
+
+  <!-- Sidebar: past conversations -->
+  <mat-sidenav #sidenav mode="side" opened class="app-sidenav">
+    <div class="sidenav-header">
+      <span class="sidenav-title">Conversations</span>
+      <a mat-icon-button routerLink="/chat" matTooltip="New chat">
+        <mat-icon>add</mat-icon>
+      </a>
+    </div>
+
+    <mat-nav-list dense>
+      @for (conv of conversations; track conv.id) {
+        <a mat-list-item [routerLink]="['/c', conv.id]" routerLinkActive="active-conv" class="conv-item"
+           [title]="conv.title || 'New conversation'">
+          <mat-icon matListItemIcon>chat_bubble_outline</mat-icon>
+          <span matListItemTitle class="conv-title">{{ conv.title || 'New conversation' }}</span>
+          <span matListItemLine class="conv-date">{{ conv.createdAt | date:'M/d, h:mm a' }}</span>
+          <button mat-icon-button matListItemMeta class="delete-conv-btn"
+                  (click)="deleteConversation($event, conv)"
+                  matTooltip="Delete conversation"
+                  matTooltipPosition="left"
+                  aria-label="Delete conversation">
+            <mat-icon>delete_outline</mat-icon>
+          </button>
+        </a>
+      } @empty {
+        <mat-list-item>
+          <span matListItemTitle class="empty-label">No past conversations</span>
+        </mat-list-item>
+      }
+    </mat-nav-list>
+  </mat-sidenav>
+
+  <!-- Main content -->
+  <mat-sidenav-content class="app-content">
+
+    <mat-toolbar color="primary" class="main-toolbar">
+      <button mat-icon-button (click)="sidenav.toggle()" matTooltip="Toggle sidebar" aria-label="Toggle sidebar">
+        <mat-icon>menu</mat-icon>
+      </button>
+      <span class="toolbar-title"><span class="title-brand">E&amp;P</span> SecureChat</span>
+      <span class="flex-spacer"></span>
+
+      @if (isAdmin) {
+        <a mat-button routerLink="/admin" class="admin-link">
+          <mat-icon>admin_panel_settings</mat-icon>
+          Admin
+        </a>
+      }
+
+      <button mat-icon-button
+              class="theme-toggle-btn"
+              (click)="themeService.toggle()"
+              [matTooltip]="themeService.isDark() ? 'Switch to Sage Green' : 'Switch to Dark Petroleum'"
+              [attr.aria-label]="themeService.isDark() ? 'Switch to Sage Green theme' : 'Switch to Dark Petroleum theme'">
+        <mat-icon>{{ themeService.isDark() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+      </button>
+
+      <button mat-button [matMenuTriggerFor]="userMenu" class="user-chip" matTooltip="Account" [attr.aria-label]="'Account menu for ' + username">
+        <mat-icon class="user-chip-icon">account_circle</mat-icon>
+        <span class="user-chip-info">
+          <span class="user-chip-name">{{ username }}</span>
+          @if (primaryRole) {
+            <span class="user-chip-role">{{ primaryRole }}</span>
+          }
+        </span>
+      </button>
+      <mat-menu #userMenu="matMenu">
+        <div class="user-menu-header">
+          <span class="user-menu-name">{{ username }}</span>
+          @if (primaryRole) {
+            <span class="user-menu-role">{{ primaryRole }}</span>
+          }
+        </div>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="logout()" class="logout-btn">
+          <mat-icon>logout</mat-icon>
+          <span>Sign out</span>
+        </button>
+      </mat-menu>
+    </mat-toolbar>
+
+    <main class="content-area">
+      <router-outlet></router-outlet>
+    </main>
+
+  </mat-sidenav-content>
+
+</mat-sidenav-container>

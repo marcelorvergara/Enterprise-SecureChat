@@ -12,7 +12,7 @@ export const adminGuard: CanActivateFn = () => {
     map(user => {
       const roles: string[] = user?.[ROLES_CLAIM] ?? [];
       const isAdmin = roles.includes('admin');
-      if (!isAdmin) router.navigate(['/']);
+      if (!isAdmin) router.navigate(['/chat']);
       return isAdmin;
     }),
   );

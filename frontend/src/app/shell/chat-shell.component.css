@@ -1,0 +1,223 @@
+.app-container {
+  height: 100vh;
+}
+
+.app-sidenav {
+  width: 256px;
+  background: var(--c-sidebar) !important;
+  border-right: 1px solid var(--c-border) !important;
+  transition: background 0.25s ease;
+}
+
+.sidenav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 8px 16px 20px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.sidenav-header a[mat-icon-button] {
+  background: var(--c-new-chat-btn-bg);
+  transition: background 0.15s;
+}
+
+.sidenav-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--c-sidenav-label);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.empty-label {
+  color: var(--c-sidenav-empty);
+  font-style: italic;
+  font-size: 0.875rem;
+}
+
+.app-content {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--c-bg);
+  transition: background 0.25s ease;
+}
+
+.main-toolbar {
+  flex-shrink: 0;
+}
+
+.toolbar-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-left: 10px;
+  letter-spacing: -0.01em;
+  color: var(--c-toolbar-text);
+}
+
+.title-brand {
+  color: var(--c-brand);
+  font-weight: 700;
+}
+
+.flex-spacer {
+  flex: 1;
+}
+
+.admin-link {
+  margin-right: 4px;
+  gap: 4px;
+  color: var(--c-admin-link);
+}
+
+.content-area {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Theme toggle button ──────────────────────────────────────────────── */
+.theme-toggle-btn {
+  color: var(--c-toggle-icon);
+  margin-right: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--c-toggle-h-bg) !important;
+}
+
+/* ── Toolbar user chip ────────────────────────────────────────────────── */
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 8px;
+  border-radius: 20px;
+  height: 40px;
+  line-height: 1;
+  min-width: 0;
+  transition: background 0.15s;
+}
+
+.user-chip:hover {
+  background: var(--c-chip-hover) !important;
+}
+
+.user-chip-icon {
+  font-size: 26px;
+  height: 26px;
+  width: 26px;
+  color: var(--c-toolbar-icon);
+  flex-shrink: 0;
+}
+
+.user-chip-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.user-chip-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--c-toolbar-text);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.user-chip-role {
+  font-size: 0.68rem;
+  color: var(--c-role-text);
+  line-height: 1.2;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+/* ── User menu dropdown ───────────────────────────────────────────────── */
+.user-menu-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px 8px;
+  pointer-events: none;
+}
+
+.user-menu-name {
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--c-menu-text);
+}
+
+.user-menu-role {
+  font-size: 0.75rem;
+  color: var(--c-menu-role);
+  text-transform: capitalize;
+}
+
+/* ── Conversation list ────────────────────────────────────────────────── */
+.conv-item {
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 2px 8px;
+  transition: background 0.12s;
+}
+
+.conv-item:hover {
+  background: var(--c-conv-h) !important;
+}
+
+.active-conv {
+  background: var(--c-conv-act-bg) !important;
+  /* inset shadow used instead of border-left — not clipped by border-radius */
+  box-shadow: inset 3px 0 0 var(--c-conv-act-br) !important;
+}
+
+/* ::ng-deep required — MDC inner elements are not stamped with the
+   component's encapsulation attribute */
+.active-conv ::ng-deep .mdc-list-item__primary-text {
+  color: var(--c-conv-act-text) !important;
+  font-weight: 600 !important;
+}
+
+/* ── Conversation list item — two-line layout ─────────────────────── */
+.conv-title {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 180px;
+}
+
+.conv-date {
+  font-size: 0.71rem;
+  color: var(--c-text-3);
+  display: block;
+  line-height: 1.3;
+}
+
+/* ── Conversation delete button ───────────────────────────────────────── */
+.delete-conv-btn {
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+  --mat-icon-button-hover-state-layer-opacity: 0;
+  --mat-icon-button-pressed-state-layer-opacity: 0;
+  --mat-icon-button-focus-state-layer-opacity: 0;
+}
+
+.conv-item:hover .delete-conv-btn,
+.active-conv .delete-conv-btn {
+  opacity: 1;
+}
