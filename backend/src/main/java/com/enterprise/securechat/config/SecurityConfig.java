@@ -1,6 +1,7 @@
 package com.enterprise.securechat.config;
 
 import com.enterprise.securechat.security.OgRolesAndGroupExtractor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,11 +14,18 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+
+    @Value("${cors.allowed-origins:http://localhost:4200,https://enpsecurechat.com}")
+    private List<String> corsAllowedOrigins;
 
     @Bean
     public RateLimitFilter rateLimitFilter() {
@@ -37,6 +45,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    RateLimitFilter rateLimitFilter) throws Exception {
         http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -81,5 +90,19 @@ public class SecurityConfig {
         var converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(new OgRolesAndGroupExtractor());
         return converter;
+    }
+
+    // Allows the Firebase-hosted SPA (enpsecurechat.com) to call /api/chat/stream
+    // directly on api.enpsecurechat.com, bypassing Firebase CDN buffering.
+    // Configured via CORS_ALLOWED_ORIGINS env var; defaults include localhost for dev.
+    @Bean
+    CorsConfigurationSource corsConfigurationSource() {
+        var config = new CorsConfiguration();
+        config.setAllowedOrigins(corsAllowedOrigins);
+        config.setAllowedMethods(List.of("POST", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        var source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/chat/stream", config);
+        return source;
     }
 }

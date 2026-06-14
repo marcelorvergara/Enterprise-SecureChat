@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, Subject, firstValueFrom } from 'rxjs';
 import { AuthService } from '@auth0/auth0-angular';
+import { environment } from '../../../environments/environment';
 
 export interface ChatRequest {
   message: string;
@@ -79,7 +80,7 @@ export class ChatService {
       (async () => {
         try {
           const token = await firstValueFrom(this.auth.getAccessTokenSilently());
-          const response = await fetch('/api/chat/stream', {
+          const response = await fetch(`${environment.streamApiBase}/api/chat/stream`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
