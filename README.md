@@ -67,7 +67,7 @@ The **Restriction Audit Log** at the bottom is the compliance backbone: every qu
 
 An admin user runs a document verification query with four attached reserve reports (visible as file chips at the bottom of the input bar: `san-field-update.pdf`, `alb-campo-valuation.pdf`, `sol-producao-anual.pdf`, and a fourth). The response synthesizes the uploaded documents against the indexed knowledge base and presents a focused summary of the numerical reserve data.
 
-Even for an admin, the DLP pipeline is active: financial figures in the response appear as `[REDACTED]` spans. The system architecture enforces DLP universally — there is no role that bypasses the Presidio post-processor. The `max_tokens=2048` budget for the verify endpoint ensures full compliance reports are never truncated mid-analysis.
+The DLP pipeline is active for all roles, but the entity allowlist is tiered by clearance. `admin` users see all O&G domain entities unredacted (`OG_VOLUMES`, `FINANCIAL_FIGURE`, `RESERVES_VARIATION`, `INVESTMENT_YEAR`, `OG_CONTRACT`, `COMMODITY_PRICE`, `ANP_PROCESS`) — PII entities (`PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `CREDIT_CARD`) are always redacted regardless of role. The `max_tokens=2048` budget for the verify endpoint ensures full compliance reports are never truncated mid-analysis.
 
 ---
 
@@ -83,7 +83,7 @@ E&P SecureChat enforces data protection at three independent layers. Disabling a
 
 ### Role-Aware Data Loss Prevention (DLP)
 
-> **How it works:** After Claude generates its draft answer, the backend sends the full response text to `http://dlp-service:8000/dlp/analyze`. The DLP microservice runs Microsoft Presidio with a Portuguese spaCy NER model (`pt_core_news_lg`) and eight custom O&G recognizers covering financial figures, reserve volumes, ANP process numbers, reserve variation percentages, investment years, contract terms, commodity prices, and document dates. Any detected entity is replaced with `[REDACTED]` before the response is returned to the Angular client.
+> **How it works:** After Claude generates its draft answer, the backend sends the full response text to `http://dlp-service:8000/dlp/analyze`. The DLP microservice runs Microsoft Presidio with a Portuguese spaCy NER model (`pt_core_news_lg`) and eight custom O&G recognizers covering financial figures, reserve volumes, ANP process numbers, reserve variation percentages, investment years, contract terms, commodity prices, and document dates. Any detected entity is replaced with `[REDACTED]` before the response is returned to the Angular client. The entity set is tiered by role: `admin` users have all O&G domain entities allowed through; `reserves-coordination` and `reserves-management` have volumes and financials allowed through; all other roles receive full redaction. PII entities (`PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `CREDIT_CARD`) are always redacted for every role.
 >
 > **Why it is blocking (non-streaming):** Presidio's NER models require complete sentence context. A person's name or a financial clause split across two streamed chunks may not be detected. The `/api/chat` endpoint intentionally waits for the full Claude response before calling DLP. When streaming is added in a future milestone, a sentence-buffer flush approach is required.
 >

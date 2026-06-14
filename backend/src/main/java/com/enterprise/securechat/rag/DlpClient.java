@@ -12,7 +12,7 @@ import java.util.List;
 @Component
 public class DlpClient {
 
-    // Roles that are authorised to see reserves volumes and financial figures unredacted.
+    // Roles cleared to see O&G business figures (volumes, financials, variations).
     // FGA already restricts which documents they can reach; DLP must not re-redact data
     // that these roles are explicitly cleared to view.
     private static final List<String> PRIVILEGED_ROLES = List.of(
@@ -20,10 +20,24 @@ public class DlpClient {
             "reserves-management"
     );
 
+    // Admin is top clearance — sees all O&G domain entities unredacted.
+    // PII entities (PERSON, EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD) are still redacted.
+    private static final List<String> ADMIN_ROLES = List.of("admin");
+
     private static final List<String> PRIVILEGED_ALLOW = List.of(
             "OG_VOLUMES",
             "RESERVES_VARIATION",
             "FINANCIAL_FIGURE"
+    );
+
+    private static final List<String> ADMIN_ALLOW = List.of(
+            "OG_VOLUMES",
+            "RESERVES_VARIATION",
+            "FINANCIAL_FIGURE",
+            "INVESTMENT_YEAR",
+            "OG_CONTRACT",
+            "COMMODITY_PRICE",
+            "ANP_PROCESS"
     );
 
     private final RestClient restClient;
@@ -34,7 +48,9 @@ public class DlpClient {
 
     public DlpResult analyze(String text, List<String> roles) {
         var allow = new ArrayList<String>();
-        if (roles.stream().anyMatch(PRIVILEGED_ROLES::contains)) {
+        if (roles.stream().anyMatch(ADMIN_ROLES::contains)) {
+            allow.addAll(ADMIN_ALLOW);
+        } else if (roles.stream().anyMatch(PRIVILEGED_ROLES::contains)) {
             allow.addAll(PRIVILEGED_ALLOW);
         }
         var response = restClient.post()
