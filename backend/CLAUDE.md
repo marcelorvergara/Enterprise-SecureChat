@@ -13,12 +13,13 @@ mvn test                  # run all JUnit/Mockito tests
 ```
 src/main/java/com/enterprise/securechat/
 ├── audit/          RestrictionAuditLog entity + AuditService (SHA-256 hashing)
-├── config/         RestClientConfig (5 typed RestClient beans), SecurityConfig
+├── config/         RestClientConfig (5 typed RestClient beans + SSE ThreadPoolTaskExecutor), SecurityConfig
 ├── conversation/   Conversation + Message entities, ConversationService/Controller
 ├── fga/            FgaService — restriction lookup + Qdrant filter builder
 ├── health/         HealthController
 ├── rag/            RagController, RagService, ParseClient, EmbedClient, IngestClient,
-│                   DocumentController, QdrantSearchClient, ClaudeService, DlpClient, dto/
+│                   DocumentController, QdrantSearchClient, ClaudeService, DlpClient,
+│                   SentenceBoundaryDetector, dto/
 └── security/       OgRolesAndGroupExtractor (reads `https://enpsecurechat.com/roles` claim)
 ```
 
@@ -39,25 +40,28 @@ src/main/java/com/enterprise/securechat/
 | `dlpRestClient` | `http://dlp-service:8000` | connect 2 s / read 60 s |
 | `ingestRestClient` | `http://ingestion:8001` | connect 2 s / read 300 s |
 
-## `ClaudeService.complete()` Overloads
+## `ClaudeService` Methods
 
-| Overload | Max tokens | Used by |
-|----------|-----------|---------|
-| `complete(system, messages)` | 1024 | Regular `/api/chat` |
+| Method / overload | Max tokens | Used by |
+|-------------------|-----------|---------|
+| `complete(system, messages)` | 1024 | `/api/chat` (legacy blocking) |
 | `complete(system, messages, 2048)` | 2048 | `/api/chat/verify` (document verification) |
-| `complete(system, messages, 1536)` | 1536 | Structured chat with AI suggestions |
+| `complete(system, messages, 1536)` | 1536 | `/api/chat` structured suggestions |
+| `complete(system, messages, 512)` | 512 | `/api/chat/stream` suggestion generation (after stream ends) |
+| `streamComplete(system, messages, 1024, onToken)` | 1024 | `/api/chat/stream` answer tokens |
 
-Do not raise the 1024 default — constraint #10 in root CLAUDE.md.
+Do not raise the 1024 default — constraint #10 in root CLAUDE.md. Do not reduce the suggestions budget below 512 — Claude may output preamble before the JSON `[` that eats into the token budget.
 
 ## Test Classes
 
 | Class | What it covers |
 |-------|---------------|
 | `FgaServiceTest` | Restriction lookup, Qdrant filter building, classification tier checks (25 cases) |
-| `RagServiceTest` | Mock Qdrant + Claude + DLP; orchestration, DLP call counts, structured JSON suggestions, malformed JSON fallback |
+| `RagServiceTest` | Mock Qdrant + Claude + DLP; orchestration, DLP call counts, structured JSON suggestions, malformed JSON fallback; streaming pipeline: user-final suggestion messages, DLP on suggestions, emitter completion, emitter resilience when suggestions fail |
+| `SentenceBoundaryDetectorTest` | ICU4J pt_BR sentence splits; decimal numbers, abbreviations, token-by-token streaming, flush behaviour (16 cases) |
 | `ConversationServiceTest` | Delete success, 403 (wrong owner), 404 |
 | `AdminControllerTest` | `@WebMvcTest`; 401 unauthenticated, 403 employee, 200 admin |
 
 ## Rate Limiting
 
-Bucket4j in-memory token bucket: 20 requests/min per `sub` JWT claim, shared across `/api/chat` and `/api/chat/verify`. Returns HTTP 429 when exceeded. Keyed to authenticated identity, not IP address.
+Bucket4j in-memory token bucket: 20 requests/min per `sub` JWT claim, shared across `/api/chat`, `/api/chat/stream`, and `/api/chat/verify`. Returns HTTP 429 when exceeded. Keyed to authenticated identity, not IP address.

@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, firstValueFrom } from 'rxjs';
+import { AuthService } from '@auth0/auth0-angular';
 
 export interface ChatRequest {
   message: string;
@@ -34,6 +35,11 @@ export interface ChatResponse {
   suggestions: string[];
 }
 
+export type StreamEvent =
+  | { type: 'content'; text: string }
+  | { type: 'metadata'; conversationId: string; sources: SourceCitation[];
+      fgaApplied: boolean; dlpEntitiesRedacted: number; suggestions: string[] };
+
 export interface Conversation {
   id: string;
   createdAt: string;
@@ -51,11 +57,86 @@ export interface Message {
 @Injectable({ providedIn: 'root' })
 export class ChatService {
   private readonly http = inject(HttpClient);
+  private readonly auth = inject(AuthService);
   private readonly conversationsRefresh$ = new Subject<void>();
   readonly refresh$ = this.conversationsRefresh$.asObservable();
 
   sendMessage(request: ChatRequest): Observable<ChatResponse> {
     return this.http.post<ChatResponse>('/api/chat', request);
+  }
+
+  /**
+   * Streams the chat response sentence-by-sentence via SSE.
+   * Uses fetch() + ReadableStream because EventSource does not support custom headers.
+   * Emits StreamEvent items: 'content' for each DLP-cleaned sentence,
+   * then one 'metadata' event at the end with sources, suggestions, and conversationId.
+   * Unsubscribing aborts the fetch (connects to the stopGenerating() cancel button).
+   */
+  sendMessageStream(request: ChatRequest): Observable<StreamEvent> {
+    return new Observable(observer => {
+      const controller = new AbortController();
+
+      (async () => {
+        try {
+          const token = await firstValueFrom(this.auth.getAccessTokenSilently());
+          const response = await fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(request),
+            signal: controller.signal,
+          });
+
+          if (!response.ok || !response.body) {
+            observer.error(new Error(`HTTP ${response.status}`));
+            return;
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // SSE blocks are separated by a blank line (\n\n)
+            const blocks = buffer.split('\n\n');
+            buffer = blocks.pop() ?? '';
+
+            for (const block of blocks) {
+              if (!block.trim()) continue;
+              const lines = block.split('\n');
+              let eventName = 'message';
+              let dataLine = '';
+              for (const line of lines) {
+                if (line.startsWith('event:')) eventName = line.substring(6).trim();
+                else if (line.startsWith('data:')) dataLine = line.substring(5).trim();
+              }
+              if (!dataLine) continue;
+
+              if (eventName === 'metadata') {
+                try { observer.next({ type: 'metadata', ...JSON.parse(dataLine) }); } catch {}
+              } else {
+                observer.next({ type: 'content', text: dataLine });
+              }
+            }
+          }
+          observer.complete();
+        } catch (err: unknown) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            observer.complete();
+          } else {
+            observer.error(err);
+          }
+        }
+      })();
+
+      return () => controller.abort();
+    });
   }
 
   getConversations(): Observable<Conversation[]> {

@@ -16,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Collection;
 import java.util.List;
@@ -314,5 +315,120 @@ class RagServiceTest {
         ragService.chat(request, auth);
 
         verify(dlpClient, atLeast(3)).analyze(any(), anyList());
+    }
+
+    // ── Streaming pipeline tests ───────────────────────────────────────────────
+
+    @Test
+    void chatStream_suggestionMessagesEndWithUserTurn() throws Exception {
+        // Regression: Anthropic API rejects any messages list whose last entry is
+        // "assistant". generateSuggestions() must always produce a user-final list.
+        var emitter = mock(SseEmitter.class);
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("What are the Q3 reserves?", null);
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Reserves are 140 MMboe.", 0));
+        doAnswer(inv -> {
+            inv.<java.util.function.Consumer<String>>getArgument(3).accept("Reserves are 140 MMboe.");
+            return null;
+        }).when(claudeService).streamComplete(anyString(), anyList(), anyInt(), any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ClaudeService.ConversationMessage>> messagesCaptor =
+                ArgumentCaptor.forClass(List.class);
+        when(claudeService.complete(anyString(), messagesCaptor.capture(), anyInt()))
+                .thenReturn("[\"Q1?\",\"Q2?\",\"Q3?\"]");
+
+        ragService.chatStream(request, auth, emitter);
+
+        var captured = messagesCaptor.getValue();
+        assertThat(captured).isNotEmpty();
+        assertThat(captured.get(captured.size() - 1).role()).isEqualTo("user");
+    }
+
+    @Test
+    void chatStream_suggestionsFlowThroughDlp() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("Tell me about reserves.", null);
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Answer.", 0));
+        doAnswer(inv -> {
+            inv.<java.util.function.Consumer<String>>getArgument(3).accept("Answer.");
+            return null;
+        }).when(claudeService).streamComplete(anyString(), anyList(), anyInt(), any());
+        when(claudeService.complete(anyString(), anyList(), anyInt()))
+                .thenReturn("[\"S1?\",\"S2?\",\"S3?\"]");
+
+        ragService.chatStream(request, auth, emitter);
+
+        // 1 DLP call for the streamed sentence + 3 for suggestions
+        verify(dlpClient, times(4)).analyze(any(), anyList());
+    }
+
+    @Test
+    void chatStream_emitterCompletedOnSuccess() throws Exception {
+        var emitter = mock(SseEmitter.class);
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("What is the drilling plan?", null);
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Plan ready.", 0));
+        doAnswer(inv -> {
+            inv.<java.util.function.Consumer<String>>getArgument(3).accept("Plan ready.");
+            return null;
+        }).when(claudeService).streamComplete(anyString(), anyList(), anyInt(), any());
+        when(claudeService.complete(anyString(), anyList(), anyInt()))
+                .thenReturn("[\"Q1?\",\"Q2?\",\"Q3?\"]");
+
+        ragService.chatStream(request, auth, emitter);
+
+        verify(emitter).complete();
+        verify(emitter, never()).completeWithError(any());
+    }
+
+    @Test
+    void chatStream_emitterStillCompletesWhenSuggestionsFail() throws Exception {
+        // generateSuggestions() swallows its own exceptions; the emitter must still
+        // complete normally so the client receives the streamed answer.
+        var emitter = mock(SseEmitter.class);
+        var conversation = new Conversation(USER_SUB);
+        var request = new ChatRequest("What about risks?", null);
+
+        when(fgaService.getRestrictedPaths(anyList(), anyList())).thenReturn(List.of());
+        when(fgaService.buildQdrantFilter(anyList(), anyList())).thenReturn(Map.of());
+        when(conversationService.getOrCreate(null, USER_SUB)).thenReturn(conversation);
+        when(embedClient.embed(any())).thenReturn(List.of(0.1f));
+        when(qdrantClient.search(any(), any(), anyInt())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), anyInt())).thenReturn(List.of());
+        when(dlpClient.analyze(any(), anyList())).thenReturn(new DlpClient.DlpResult("Risk assessment done.", 0));
+        doAnswer(inv -> {
+            inv.<java.util.function.Consumer<String>>getArgument(3).accept("Risk assessment done.");
+            return null;
+        }).when(claudeService).streamComplete(anyString(), anyList(), anyInt(), any());
+        when(claudeService.complete(anyString(), anyList(), anyInt()))
+                .thenThrow(new RuntimeException("Anthropic unavailable"));
+
+        ragService.chatStream(request, auth, emitter);
+
+        verify(emitter).complete();
+        verify(emitter, never()).completeWithError(any());
     }
 }

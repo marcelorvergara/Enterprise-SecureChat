@@ -73,6 +73,13 @@
       <version>8.10.1</version>
     </dependency>
 
+    <!-- Sentence boundary detection for SSE streaming (handles pt-BR abbreviations + decimals) -->
+    <dependency>
+      <groupId>com.ibm.icu</groupId>
+      <artifactId>icu4j</artifactId>
+      <version>75.1</version>
+    </dependency>
+
     <!-- Test -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

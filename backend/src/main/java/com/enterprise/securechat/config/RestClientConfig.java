@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.RestClient;
 
 @Configuration
@@ -69,6 +70,22 @@ public class RestClientConfig {
                 .requestFactory(factory(2_000, 120_000))
                 .baseUrl(embedUrl)
                 .build();
+    }
+
+    /**
+     * Executor for SSE streaming requests. Each concurrent /api/chat/stream call
+     * runs on a dedicated thread (blocking I/O to Claude + DLP), so the Tomcat
+     * request thread is released immediately after the SseEmitter is returned.
+     */
+    @Bean("sseExecutor")
+    public ThreadPoolTaskExecutor sseExecutor() {
+        var executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(10);
+        executor.setQueueCapacity(20);
+        executor.setThreadNamePrefix("sse-");
+        executor.initialize();
+        return executor;
     }
 
     private SimpleClientHttpRequestFactory factory(int connectMs, int readMs) {

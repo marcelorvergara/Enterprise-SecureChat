@@ -18,9 +18,9 @@ import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Limits POST /api/chat to 20 requests per minute per authenticated user (JWT sub claim).
- * Registered inside the Spring Security filter chain, after BearerTokenAuthenticationFilter,
- * so the SecurityContext is already populated when this filter runs.
+ * Limits POST /api/chat, /api/chat/stream, and /api/chat/verify to 20 requests per minute
+ * per authenticated user (JWT sub claim). Registered inside the Spring Security filter chain,
+ * after BearerTokenAuthenticationFilter, so the SecurityContext is already populated.
  * FilterRegistrationBean in SecurityConfig prevents double-registration as a servlet filter.
  */
 public class RateLimitFilter extends OncePerRequestFilter {
@@ -36,7 +36,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         var uri = request.getRequestURI();
         if (!"POST".equalsIgnoreCase(request.getMethod())
-                || (!"/api/chat".equals(uri) && !"/api/chat/verify".equals(uri))) {
+                || (!"/api/chat".equals(uri)
+                    && !"/api/chat/stream".equals(uri)
+                    && !"/api/chat/verify".equals(uri))) {
             chain.doFilter(request, response);
             return;
         }

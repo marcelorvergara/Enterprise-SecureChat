@@ -6,17 +6,26 @@ import com.enterprise.securechat.fga.FgaService;
 import com.enterprise.securechat.rag.dto.ChatRequest;
 import com.enterprise.securechat.rag.dto.ChatResponse;
 import com.enterprise.securechat.rag.dto.SourceCitation;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class RagService {
+
+    private static final Logger log = LoggerFactory.getLogger(RagService.class);
 
     // Top-K chunks passed to Claude as context.
     // 10 gives BU-specific documents (which may compete with many corporate-answers
@@ -25,6 +34,10 @@ public class RagService {
     // Last N conversation turns (user+assistant pairs) sent to Claude
     private static final int HISTORY_TURNS = 10;
     private static final int STRUCTURED_CHAT_MAX_TOKENS = 1536;
+    // Streaming endpoint uses plain-text prompt (no JSON overhead); 1024 is the default cap
+    private static final int STREAMING_MAX_TOKENS = 1024;
+    // Reused across streaming helpers — ObjectMapper is thread-safe after construction
+    private static final ObjectMapper STREAM_MAPPER = new ObjectMapper();
 
     private final FgaService fgaService;
     private final EmbedClient embedClient;
@@ -325,5 +338,196 @@ public class RagService {
     private Integer payloadInt(Map<String, Object> payload, String key) {
         var val = payload.get(key);
         return val instanceof Number n ? n.intValue() : null;
+    }
+
+    // ── Streaming RAG pipeline ─────────────────────────────────────────────────
+
+    /**
+     * Sentence-buffered streaming variant of {@link #chat}. Tokens arrive from Claude,
+     * complete sentences are DLP-scanned and emitted as SSE events. A final "metadata"
+     * event carries conversationId, sources, DLP count, and suggestions.
+     *
+     * NOT @Transactional — same reasoning as chat(). The executor thread that calls this
+     * must not hold a DB connection while awaiting tokens from Claude or DLP responses.
+     */
+    public void chatStream(ChatRequest request, Authentication auth, SseEmitter emitter) {
+        var jwt = (Jwt) auth.getPrincipal();
+        var userSub = jwt.getSubject();
+
+        var roles = auth.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring(5))
+                .toList();
+
+        var groups = auth.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .filter(a -> a.startsWith("GROUP_"))
+                .toList();
+
+        // ── 1. FGA ───────────────────────────────────────────────────────────
+        List<String> restrictedPaths        = fgaService.getRestrictedPaths(roles, groups);
+        List<String> blockedClassifications = fgaService.getBlockedClassifications(roles);
+        Map<String, Object> qdrantFilter    = fgaService.buildQdrantFilter(restrictedPaths, blockedClassifications);
+
+        // ── 2. Conversation ──────────────────────────────────────────────────
+        var conversation = conversationService.getOrCreate(request.conversationId(), userSub);
+        if (conversation.getTitle() == null) {
+            conversationService.setTitle(conversation.getId(), request.message());
+        }
+
+        // ── 3. Embed + FGA-filtered search ───────────────────────────────────
+        var vector = embedClient.embed(request.message());
+        var hits   = qdrantClient.search(vector, qdrantFilter, TOP_K);
+
+        // ── 4. Sources + context ─────────────────────────────────────────────
+        var sources = hits.stream()
+                .map(hit -> new SourceCitation(
+                        hit.id(),
+                        payloadString(hit.payload(), "source_file"),
+                        payloadString(hit.payload(), "subject_path"),
+                        payloadInt(hit.payload(), "page_number"),
+                        payloadString(hit.payload(), "sheet_name"),
+                        hit.score()
+                ))
+                .toList();
+
+        var contextChunks = hits.stream()
+                .map(hit -> payloadString(hit.payload(), "chunk_text"))
+                .filter(text -> text != null && !text.isBlank())
+                .collect(Collectors.joining("\n\n---\n\n"));
+
+        // ── 5. Build streaming prompt (plain text — no JSON format instruction) ─
+        var systemPrompt = buildStreamingSystemPrompt(contextChunks);
+
+        var history = conversationService.getHistory(conversation.getId(), HISTORY_TURNS);
+        var claudeMessages = new ArrayList<ClaudeService.ConversationMessage>();
+        for (var msg : history) {
+            claudeMessages.add(new ClaudeService.ConversationMessage(msg.getRole(), msg.getContent()));
+        }
+        claudeMessages.add(new ClaudeService.ConversationMessage("user", request.message()));
+
+        // ── 6. Persist user message + audit BEFORE streaming starts ──────────
+        conversationService.saveUserMessage(conversation.getId(), request.message());
+        auditService.log(userSub, roles, restrictedPaths, request.message());
+
+        // ── 7. Stream → sentence buffer → DLP per sentence → SSE ─────────────
+        var detector      = new SentenceBoundaryDetector();
+        var fullAnswer    = new StringBuilder();
+        int[] dlpCount    = {0};
+
+        try {
+            claudeService.streamComplete(systemPrompt, claudeMessages, STREAMING_MAX_TOKENS, token -> {
+                List<String> sentences = detector.feed(token);
+                for (String sentence : sentences) {
+                    emitRedactedSentence(sentence, roles, emitter, fullAnswer, dlpCount);
+                }
+            });
+
+            // Flush any trailing sentence fragment
+            String tail = detector.flush();
+            if (!tail.isBlank()) {
+                emitRedactedSentence(tail, roles, emitter, fullAnswer, dlpCount);
+            }
+
+            // ── 8. Generate suggestions (non-streaming, after answer is complete) ─
+            // Anthropic API requires the last message to be from "user".
+            // Build a focused two-message context (Q + A) rather than reusing
+            // claudeMessages (which would end on the "assistant" turn and be rejected).
+            var qaContext = "User question: " + request.message() + "\n\n"
+                          + "Answer provided: " + fullAnswer.toString().strip();
+            var suggestionMessages = List.of(
+                    new ClaudeService.ConversationMessage("user", qaContext));
+            var suggestions = generateSuggestions(suggestionMessages, roles);
+
+            // ── 9. Persist assembled answer ───────────────────────────────────
+            var cleanedAnswer = fullAnswer.toString().strip();
+            conversationService.saveAssistantMessage(conversation.getId(), cleanedAnswer, sources, dlpCount[0]);
+
+            // ── 10. Final metadata event ──────────────────────────────────────
+            var metadata = buildMetadataJson(conversation.getId(), sources,
+                    !restrictedPaths.isEmpty(), dlpCount[0], suggestions);
+            emitter.send(SseEmitter.event().name("metadata").data(metadata));
+            emitter.complete();
+
+        } catch (UncheckedIOException e) {
+            emitter.completeWithError(e.getCause());
+        } catch (Exception e) {
+            try { emitter.completeWithError(e); } catch (Exception ignored) {}
+        }
+    }
+
+    private void emitRedactedSentence(String sentence, List<String> roles,
+                                       SseEmitter emitter, StringBuilder accumulator,
+                                       int[] dlpCount) {
+        var result = dlpClient.analyze(sentence, roles);
+        dlpCount[0] += result.entitiesRedacted();
+        String cleaned = result.cleanedText();
+        accumulator.append(cleaned).append(" ");
+        try {
+            emitter.send(SseEmitter.event().data(cleaned));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private List<String> generateSuggestions(List<ClaudeService.ConversationMessage> messages,
+                                              List<String> roles) {
+        var suggestionSystemPrompt =
+            "You generate follow-up questions for an Oil & Gas enterprise knowledge assistant. "
+          + "Respond ONLY with a JSON array of exactly 3 question strings. No prose, no markdown. "
+          + "Example: [\"What is the production rate?\", \"Which operator holds the stake?\", \"What are the ANP requirements?\"]";
+        try {
+            var raw = claudeService.complete(suggestionSystemPrompt, messages, 512);
+            int start = raw.indexOf('[');
+            int end   = raw.lastIndexOf(']');
+            if (start == -1 || end <= start) {
+                log.warn("generateSuggestions: no JSON array found in Claude response: {}", raw);
+                return List.of();
+            }
+            var node = STREAM_MAPPER.readTree(raw.substring(start, end + 1));
+            if (!node.isArray()) return List.of();
+            List<String> suggestions = new ArrayList<>();
+            for (var s : node) {
+                var text = s.asText("").strip();
+                if (!text.isBlank()) suggestions.add(text);
+            }
+            return suggestions.stream()
+                    .map(s -> dlpClient.analyze(s, roles).cleanedText())
+                    .toList();
+        } catch (Exception e) {
+            log.warn("generateSuggestions failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String buildStreamingSystemPrompt(String contextChunks) {
+        var base = OG_BASE_INSTRUCTIONS + "\n\n"
+            + "Answer using ONLY the provided context. "
+            + "Do not invent facts not present in the context. "
+            + "If the context is insufficient, say so clearly. "
+            + "Respond in plain prose — no JSON, no code fences.\n\n";
+        if (contextChunks == null || contextChunks.isBlank()) {
+            return base + "No relevant documents were found for this query — say so clearly.";
+        }
+        return base + "Context:\n" + contextChunks;
+    }
+
+    private String buildMetadataJson(UUID conversationId, List<SourceCitation> sources,
+                                      boolean fgaApplied, int dlpEntitiesRedacted,
+                                      List<String> suggestions) {
+        try {
+            var node = STREAM_MAPPER.createObjectNode();
+            node.put("conversationId", conversationId.toString());
+            node.put("fgaApplied", fgaApplied);
+            node.put("dlpEntitiesRedacted", dlpEntitiesRedacted);
+            node.set("sources", STREAM_MAPPER.valueToTree(sources));
+            var sugArr = STREAM_MAPPER.createArrayNode();
+            suggestions.forEach(sugArr::add);
+            node.set("suggestions", sugArr);
+            return STREAM_MAPPER.writeValueAsString(node);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 }

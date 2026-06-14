@@ -21,7 +21,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { CdkTextareaAutosize, TextFieldModule } from '@angular/cdk/text-field';
 import { AuthService } from '@auth0/auth0-angular';
 import { MatMenuModule } from '@angular/material/menu';
-import { ChatService, Message, SourceCitation } from '../../core/services/chat.service';
+import { ChatService, Message, SourceCitation, StreamEvent } from '../../core/services/chat.service';
 import { ConversationExportService } from '../../core/services/conversation-export.service';
 import { SafeMarkdownPipe } from '../../shared/pipes/safe-markdown.pipe';
 import { BuUploadModalComponent } from './bu-upload-modal.component';
@@ -212,42 +212,92 @@ export class ChatComponent implements OnInit, AfterViewChecked, OnDestroy {
     this.pendingScroll = true;
 
     const wasNew = !this.conversationId;
-    const request$ = fileToSend
-      ? this.chatService.verifyDocument(text, this.conversationId, fileToSend)
-      : this.chatService.sendMessage({ message: text, conversationId: this.conversationId });
 
-    this.pendingRequest = request$.subscribe({
-      next: response => {
-        this.conversationId = response.conversationId;
-        if (wasNew) {
-          this.chatService.notifyConversationCreated();
-          this.location.replaceState(`/c/${response.conversationId}`);
-        }
-        this.messages.push({
-          role: 'assistant',
-          content: response.answer,
-          sources: this.deduplicateSources(response.sources ?? []),
-          fgaApplied: response.fgaApplied,
-          dlpEntitiesRedacted: response.dlpEntitiesRedacted,
+    if (fileToSend) {
+      // Document verification stays blocking — DLP requires the full document context
+      this.pendingRequest = this.chatService
+        .verifyDocument(text, this.conversationId, fileToSend)
+        .subscribe({
+          next: response => {
+            this.conversationId = response.conversationId;
+            if (wasNew) {
+              this.chatService.notifyConversationCreated();
+              this.location.replaceState(`/c/${response.conversationId}`);
+            }
+            this.messages.push({
+              role: 'assistant',
+              content: response.answer,
+              sources: this.deduplicateSources(response.sources ?? []),
+              fgaApplied: response.fgaApplied,
+              dlpEntitiesRedacted: response.dlpEntitiesRedacted,
+            });
+            this.suggestions = response.suggestions ?? [];
+            this.loading = false;
+            this.pendingRequest = undefined;
+            this.pendingScroll = true;
+          },
+          error: () => this.handleStreamError(),
         });
-        this.suggestions = response.suggestions ?? [];
-        this.loading = false;
-        this.pendingRequest = undefined;
-        this.pendingScroll = true;
-      },
-      error: () => {
-        this.messages.push({
-          role: 'assistant',
-          content: 'Something went wrong. Please try again.',
-          sources: [],
-          fgaApplied: false,
-          dlpEntitiesRedacted: 0,
-        });
-        this.loading = false;
-        this.pendingRequest = undefined;
-        this.pendingScroll = true;
-      },
+      return;
+    }
+
+    // Regular chat — sentence-buffered SSE stream
+    // Push a placeholder message immediately so the UI shows a typing indicator
+    this.messages.push({
+      role: 'assistant',
+      content: '',
+      sources: [],
+      fgaApplied: false,
+      dlpEntitiesRedacted: 0,
     });
+    const streamingMsg = this.messages[this.messages.length - 1];
+
+    this.pendingRequest = this.chatService
+      .sendMessageStream({ message: text, conversationId: this.conversationId })
+      .subscribe({
+        next: (event: StreamEvent) => {
+          if (event.type === 'content') {
+            streamingMsg.content += (streamingMsg.content ? ' ' : '') + event.text;
+            this.pendingScroll = true;
+          } else if (event.type === 'metadata') {
+            this.conversationId = event.conversationId;
+            streamingMsg.sources = this.deduplicateSources(event.sources ?? []);
+            streamingMsg.fgaApplied = event.fgaApplied;
+            streamingMsg.dlpEntitiesRedacted = event.dlpEntitiesRedacted;
+            this.suggestions = event.suggestions ?? [];
+            if (wasNew) {
+              this.chatService.notifyConversationCreated();
+              this.location.replaceState(`/c/${event.conversationId}`);
+            }
+          }
+        },
+        error: () => {
+          if (!streamingMsg.content) {
+            streamingMsg.content = 'Something went wrong. Please try again.';
+          }
+          this.loading = false;
+          this.pendingRequest = undefined;
+          this.pendingScroll = true;
+        },
+        complete: () => {
+          this.loading = false;
+          this.pendingRequest = undefined;
+          this.pendingScroll = true;
+        },
+      });
+  }
+
+  private handleStreamError(): void {
+    this.messages.push({
+      role: 'assistant',
+      content: 'Something went wrong. Please try again.',
+      sources: [],
+      fgaApplied: false,
+      dlpEntitiesRedacted: 0,
+    });
+    this.loading = false;
+    this.pendingRequest = undefined;
+    this.pendingScroll = true;
   }
 
   private deduplicateSources(sources: SourceCitation[]): SourceCitation[] {

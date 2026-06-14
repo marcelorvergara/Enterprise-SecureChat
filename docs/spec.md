@@ -21,7 +21,7 @@ Architecture diagram: see [mermaid.txt](mermaid.txt).
 - Provide an admin panel to manage role restrictions without redeploying
 
 **Non-Goals (Phase 1)**
-- Real-time streaming responses (blocked by DLP requirement — see §8)
+- Multi-sentence entity-span DLP accuracy at streaming speed (sentence-level buffering is used; true cross-sentence entities remain a known limitation)
 - Multi-tenant isolation (single company deployment)
 - Permanent document ingestion via the chat UI (documents for the knowledge base are indexed via the CLI pipeline; the chat UI supports ephemeral one-time verification only — see `POST /api/chat/verify`)
 - Fine-grained per-document ACLs (restrictions are path-prefix based)
@@ -111,27 +111,54 @@ No auth required.
 { "status": "ok", "keycloak": "reachable", "qdrant": "reachable" }
 ```
 
-#### `POST /api/chat`
-Auth: Bearer JWT (Auth0). **Blocking — not streaming (see §8).**
+#### `POST /api/chat/stream` _(primary chat endpoint)_
+Auth: Bearer JWT (Auth0). **SSE — `text/event-stream`.**
+
+The regular chat endpoint. Tokens from Claude are buffered sentence-by-sentence (`SentenceBoundaryDetector` / ICU4J `pt_BR`), DLP-scanned per sentence, then emitted as SSE `data:` events. A final `event: metadata` closes the stream.
+
+```
+// Request (JSON body)
+{ "message": "What are the Q3 drilling plans?", "conversationId": "uuid | null" }
+
+// SSE events (text/event-stream)
+data: The Q3 drilling plans focus on the Santos Basin.
+
+data: Three wells are scheduled for H2.
+
+event: metadata
+data: {
+  "conversationId": "uuid",
+  "fgaApplied": true,
+  "dlpEntitiesRedacted": 0,
+  "sources": [
+    { "chunkId": "...", "sourceFile": "drilling-plans.pdf",
+      "subjectPath": "operations/drilling", "pageNumber": 2, "score": 0.91 }
+  ],
+  "suggestions": ["What are the Q4 targets?", "Which wells are highest priority?", "What is the current reservoir pressure?"]
+}
+```
+
+FGA and audit log run **before** streaming begins. Suggestions are generated via a separate non-streaming Claude call (512 tokens) after the answer stream ends. Rate-limited: 20 req/min per JWT `sub`.
+
+#### `POST /api/chat` _(legacy / document-verify compatible)_
+Auth: Bearer JWT (Auth0). **Blocking — returns complete JSON.**
+
+Retained for compatibility with `/api/chat/verify` callers and clients that need a single JSON response. Claude returns a structured JSON object `{"answer":"...","suggestions":[...]}` via system-prompt instruction. `parseClaudeResponse()` extracts the JSON bounds before parsing; on any failure the raw string becomes the answer and `suggestions` is `[]`. Each suggestion is independently DLP-scanned. `suggestions` is ephemeral (not persisted). Max tokens: 1536 (explicit overload; default 1024 unchanged).
+
 ```json
 // Request
-{ "prompt": "What are the Q3 drilling plans?", "conversation_id": "uuid | null" }
+{ "message": "What are the Q3 drilling plans?", "conversationId": "uuid | null" }
 
 // Response
 {
   "answer": "The Q3 drilling plans focus on...",
-  "conversation_id": "uuid",
-  "sources": [
-    { "source_file": "drilling-plans.pdf", "subject_path": "operations/drilling",
-      "chunk_index": 2, "score": 0.91, "chunk_id": "qdrant-point-uuid" }
-  ],
-  "fga_applied": true,
-  "dlp_entities_redacted": 0,
+  "conversationId": "uuid",
+  "sources": [...],
+  "fgaApplied": true,
+  "dlpEntitiesRedacted": 0,
   "suggestions": ["What are the Q4 targets?", "Which wells are highest priority?"]
 }
 ```
-
-Claude returns a structured JSON object `{"answer":"...","suggestions":[...]}` via a system-prompt instruction. `parseClaudeResponse()` extracts the JSON bounds before parsing; on any failure the raw string becomes the answer and `suggestions` is `[]`. Each suggestion is independently DLP-scanned before reaching the client — suggestions never bypass the DLP pipeline. `suggestions` is ephemeral (not persisted to `messages`). Max tokens for structured chat: 1536 (via explicit overload; default 1024 unchanged).
 
 #### `POST /api/chat/verify`
 Auth: Bearer JWT (Auth0). **Multipart form-data.** Accepts a file alongside a question and cross-references it against the knowledge base.
@@ -365,10 +392,16 @@ The separate key namespace prevents collisions between file and HTML entries. Fo
 
 ## 8. Design Constraints
 
-### Non-Streaming (Phase 1)
-`/api/chat` is **blocking**. The backend waits for Claude to complete the full answer, then sends the entire text to Presidio for NER-based redaction. Presidio requires complete sentence context to accurately detect entity boundaries — streaming token-by-token breaks detection.
+### Sentence-Buffered SSE Streaming
+`/api/chat/stream` uses `SseEmitter` + a `ThreadPoolTaskExecutor` (core=4, max=10). Claude tokens are fed into `SentenceBoundaryDetector`, which wraps ICU4J `BreakIterator.getSentenceInstance(pt_BR)` and applies a confirmed-boundary algorithm: a sentence is only emitted when the *next* sentence starts arriving, eliminating premature splits on abbreviations (`Sr.`, `Dr.`, `U.S.`) and decimal numbers (`140.5 MMboe`). Each flushed sentence is DLP-scanned via Presidio before being sent to the client.
 
-Future streaming path: sentence-buffer accumulation (hold tokens until punctuation → flush window to DLP → stream redacted chunk to client). Not implemented in Phase 1.
+**Why sentence-level (not token-level) DLP:** Presidio's NER models require sentence context to detect entity boundaries accurately. Sending individual tokens breaks detection. Sentence-level buffering preserves NER accuracy while still providing progressive output (one sentence arrives at a time rather than the whole answer at once). True cross-sentence entity spans (e.g., an organisation name split across two sentences) remain a known limitation.
+
+**Preserved constraints:**
+- FGA Qdrant filter is built and applied before streaming begins.
+- SHA-256 audit log is written before streaming begins.
+- `chatStream()` is not `@Transactional` — the executor thread holds no DB connection during Claude/DLP I/O.
+- `/api/chat` (blocking) is kept alongside `/api/chat/stream` — `/api/chat/verify` depends on it.
 
 ### Neon Scale-to-Zero
 Neon free tier suspends the database after 5 minutes of inactivity (~500ms cold-start on next connection). This is acceptable for a side project. Spring Boot's JDBC connection pool handles reconnection transparently.

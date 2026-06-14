@@ -103,8 +103,17 @@ Enterprise-SecureChat/
 ### 1. `RagService.chat()` is NOT `@Transactional`
 External HTTP calls (embed ~5 s, Qdrant ~10 s, Claude ~60 s) happen inside this method. Annotating it `@Transactional` would hold a HikariCP connection open for the entire duration. With `maximum-pool-size: 5`, just five concurrent users would exhaust the pool. Each DB operation runs in its own short transaction via the injected services.
 
-### 2. `/api/chat` is blocking (non-streaming)
-The DLP service requires the complete Claude answer to detect entities that span sentence boundaries. Streaming token-by-token breaks Presidio's NER models. When streaming is added in a future milestone, a sentence-buffer flush approach is required.
+### 2. `/api/chat/stream` uses sentence-buffered SSE — `/api/chat` stays blocking
+Regular chat uses `POST /api/chat/stream` (SSE, `text/event-stream`). Tokens from Claude are buffered by `SentenceBoundaryDetector` (ICU4J `pt_BR` `BreakIterator`); each confirmed sentence is DLP-scanned and emitted as an SSE `data:` event. A final `event: metadata` carries `conversationId`, sources, FGA flag, DLP count, and suggestions.
+
+`/api/chat` (structured JSON) is kept for compatibility with `/api/chat/verify` and any client that needs a complete JSON payload. Do not remove it.
+
+**Streaming constraints preserved:**
+- FGA + Qdrant filter applied **before** streaming begins — constraint #3 is fully intact.
+- SHA-256 audit log saved **before** streaming begins — constraint #4 is fully intact.
+- `chatStream()` is NOT `@Transactional` — same HikariCP reasoning as constraint #1.
+- DLP runs **per sentence**, not per token — Presidio NER accuracy is maintained because sentences carry enough context for entity boundary detection. True cross-sentence entity spans remain a known limitation of this approach.
+- Suggestions are generated via a **separate non-streaming** `ClaudeService.complete()` call after the answer stream ends, then delivered in the closing metadata event. The messages list passed to that call must end with a `user` turn — the Anthropic API rejects assistant-final lists.
 
 ### 3. FGA enforces via Qdrant `must_not` filter — never in application code
 `FgaService.buildQdrantFilter()` produces a `must_not` filter on the `ancestor_paths` payload field. This filter is applied at the Qdrant search layer, not by filtering results in Java. There is no code path to `/api/chat` that bypasses it.
@@ -129,6 +138,8 @@ Runs `pt_core_news_lg` (not `en_core_web_lg`) so Brazilian basin/field names (Pr
 
 ### 10. `ClaudeService.complete()` — `maxTokens` overload
 The no-arg overload defaults to 1024 tokens (sufficient for regular chat). `/api/chat/verify` uses the two-arg overload with `maxTokens=2048`. Structured chat (AI suggestions) uses the three-arg overload with 1536. Do not increase the default — 1024 is intentional.
+
+`/api/chat/stream` uses `streamComplete()` (1024 tokens) for the answer and `complete(..., 512)` for the follow-up suggestions call. 512 tokens is sufficient for a JSON array of 3 questions; do not reduce it — Claude may produce preamble text before the `[` which consumes part of the budget.
 
 ### 11. Crawler and manifest are two independent ingestion paths — do not merge
 Both share the same `/ingest` endpoint. Never index crawler-managed files in the manifest or vice versa — duplicate vectors result if the same file gets different `bu_path` values via each path.
