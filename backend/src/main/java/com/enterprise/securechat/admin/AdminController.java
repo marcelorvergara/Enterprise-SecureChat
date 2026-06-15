@@ -1,9 +1,7 @@
 package com.enterprise.securechat.admin;
 
-import com.enterprise.securechat.audit.RestrictionAuditLog;
 import com.enterprise.securechat.audit.RestrictionAuditLogRepository;
 import com.enterprise.securechat.conversation.MessageRepository;
-import com.enterprise.securechat.fga.Role;
 import com.enterprise.securechat.fga.RoleRepository;
 import com.enterprise.securechat.fga.RoleRestriction;
 import com.enterprise.securechat.fga.RoleRestrictionRepository;
