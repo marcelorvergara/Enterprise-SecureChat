@@ -81,12 +81,17 @@ Enterprise-SecureChat/
 ├── ingestion/
 │   ├── src/
 │   │   ├── parsers/        pdf_parser, excel_parser (xlsx + xls), image_parser (OCR por+eng)
+│   │   ├── crawlers/       multi-source regulatory crawler package
+│   │   │   ├── base.py     BaseCrawler ABC + PloneMixin (gov.br Plone HTML extraction)
+│   │   │   ├── anp.py      ANPCrawler — BFS over ANP E&P portal (Plone, files+html)
+│   │   │   ├── mme.py      MMECrawler — BFS over MME O&G secretariat (Plone, files+html)
+│   │   │   └── epe.py      EPECrawler — Playwright JS pagination + PDF download (files only)
 │   │   ├── chunker.py      LangChain RecursiveCharacterTextSplitter (512 tok / 64 overlap)
 │   │   ├── embedder.py     all-MiniLM-L6-v2
 │   │   ├── qdrant_writer.py  upsert + delete_by_doc_id for idempotency
 │   │   ├── classifier.py   extracts classification_level from doc metadata
 │   │   ├── embed_api.py    Uvicorn FastAPI — POST /embed, POST /parse, POST /ingest
-│   │   └── crawler.py      ANP E&P portal BFS scraper → /ingest API
+│   │   └── crawler.py      CLI entry point — delegates to crawlers/ via --source anp|mme|epe
 │   └── manifests/og-manifest.yaml
 ├── infra/
 │   ├── docker-compose.yml

@@ -26,6 +26,7 @@ For current architecture, constraints, and API contracts see [CLAUDE.md](../CLAU
 | **Sprint 1 — User Trust & Mobility** | Source Deep-Link Previews (8 SP) · Export to PDF/Markdown (8 SP) | M13, M14 | Citation chips open Qdrant chunk previews; full conversation export to Markdown/Print-PDF |
 | **Sprint 2 — Compliance Moat** | Enterprise Document Classification Sync (13 SP) | M15 | Three-tier clearance (Public / Internal / Confidential) enforced at Qdrant layer via `classification_level` `must_not` clause |
 | **Sprint 3 — Engagement & Insights** | AI Suggested Follow-ups (8 SP) · Admin Security Heatmap (13 SP) | M16, M17 | Structured JSON from Claude with DLP-scanned chip suggestions; Chart.js bar charts for FGA block frequency and DLP redaction density |
+| **Sprint 4 — Regulatory Data Expansion** | Multi-Source Crawler (13 SP) | M19 | `BaseCrawler` + `PloneMixin` refactor; `--source` flag; MMECrawler (gov.br Plone); EPECrawler (Playwright JS-paginated listing); three Cloud Run Jobs with staggered weekly schedules |
 
 ---
 
@@ -60,6 +61,9 @@ Claude instructed via `JSON_FORMAT_INSTRUCTION` to return `{"answer":"...","sugg
 
 ### M17 — Admin Security Heatmap
 `RestrictionAuditLogRepository.findTopRestrictedPaths()` — native PostgreSQL `unnest + COUNT(*)` returning top 20 blocked paths. `MessageRepository.findDlpDensityByDay()` — native `DATE_TRUNC('day') + SUM(dlp_redacted)` for last 30 days. `GET /api/admin/metrics/security-heatmap`. Angular admin panel adds two `<canvas baseChart>` charts in a CSS grid. `AdminControllerTest` with 3 security cases.
+
+### M19 — Multi-Source Regulatory Crawler
+`ingestion/src/crawlers/` package: `BaseCrawler` ABC (shared HTTP, SHA/ETag state, `/ingest` posting, BFS run loop) + `PloneMixin` (gov.br Plone HTML extraction — breadcrumb prefix, boilerplate stripping, slug-keyed HTML state). `ANPCrawler` refactored onto `BaseCrawler`; classification unchanged (BAR files → Confidential, HTML pages → Public). `MMECrawler` added — same Plone stack as ANP, all content Public, `subject_path: regulatory/mme`, `jurisdiction: br/mme`. `EPECrawler` added — Playwright headless Chromium paginates the Liferay JS-driven listing (up to 10 pages, ~100 pubs), plain `requests` finds the PDF link on each detail page; `subject_path: regulatory/epe`, all Public. `crawler.py` updated to a thin shim: `--source anp|mme|epe` CLI flag + `CRAWLER_SOURCE` env var. Dockerfile updated: Chromium system libs installed via `apt-get` (avoids Ubuntu-only `--with-deps` failure on Debian), `playwright install chromium` baked into the image layer. Three Cloud Run Jobs deployed: `anp-crawler-job` (512 Mi), `mme-crawler-job` (512 Mi), `epe-crawler-job` (1 Gi for Playwright). Per-source state files (`.crawler_state_{source}.json`) in the shared GCS bucket. Weekly Cloud Scheduler triggers staggered at 03:00, 04:00, 05:00 BRT on Mondays.
 
 ### M18 — FGA Classification Security Audit (CI/CD)
 `ingestion/tests/test_classification_fga_integration.py` — full pytest refactor with `pytest.mark.integration`, session-scoped `ingested_points` fixture, 4 test classes (`TestPayloadAudit`, `TestLowClearanceIsolation`, `TestHighClearanceElevation`, `TestIdEnumerationAttack`). `.github/workflows/security-audit.yml` — triggers on push/PR to `main` for `ingestion/src/**` or `backend/**/fga/**` changes; caches HuggingFace model; polls `/health`, runs pytest. `Makefile` at project root — `make security-audit` and `make security-audit-fixtures`.

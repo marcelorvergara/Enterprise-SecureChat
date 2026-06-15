@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'infra/crawler-job.yaml'
+      - 'infra/mme-crawler-job.yaml'
+      - 'infra/epe-crawler-job.yaml'
       - '.github/workflows/crawler.yml'
 
 jobs:
@@ -19,5 +21,8 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Apply crawler job config
-        run: gcloud run jobs replace infra/crawler-job.yaml --region=us-east4
+      - name: Apply crawler job configs
+        run: |
+          gcloud run jobs replace infra/crawler-job.yaml     --region=us-east4
+          gcloud run jobs replace infra/mme-crawler-job.yaml --region=us-east4
+          gcloud run jobs replace infra/epe-crawler-job.yaml --region=us-east4

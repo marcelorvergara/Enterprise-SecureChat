@@ -44,6 +44,8 @@ flowchart TD
 
     User((Corporate User<br/>Browser)):::internet
     ANP_Portal[Public ANP E&P Portal<br/>gov.br/anp]:::internet
+    MME_Portal[Public MME O&G Secretariat<br/>gov.br/mme]:::internet
+    EPE_Portal[EPE Publications Portal<br/>epe.gov.br]:::internet
     Anthropic[Anthropic Claude API<br/>claude-sonnet-4-6]:::internet
 
     subgraph Auth0_Cloud [Managed Identity Plane]
@@ -65,7 +67,9 @@ flowchart TD
         CR_Dlp[Cloud Run: securechat-dlp<br/>Public Ingress · IAM Protected · Port 8000]:::run
         CR_Ing[Cloud Run: securechat-ingestion<br/>Public Ingress · IAM Protected · Port 8001]:::run
 
-        Job_Crawler[Cloud Run Job: anp-crawler<br/>Scheduled Weekly · BRT Monday 03:00]:::run
+        Job_ANP[Cloud Run Job: anp-crawler<br/>Monday 03:00 BRT · weekly]:::run
+        Job_MME[Cloud Run Job: mme-crawler<br/>Monday 04:00 BRT · weekly]:::run
+        Job_EPE[Cloud Run Job: epe-crawler<br/>Monday 05:00 BRT · weekly · 1 Gi]:::run
     end
 
     subgraph Storage_Tier [GCS Object Store]
@@ -87,9 +91,15 @@ flowchart TD
 
     CR_Ing ===>|Idempotent vector upsert| Qdrant_Cloud
 
-    Job_Crawler ==>|Persist crawler state| Bucket_State
-    Job_Crawler ==>|POST chunks to /ingest| CR_Ing
-    Job_Crawler -.->|BFS scrape PDF/HTML| ANP_Portal
+    Job_ANP ==>|Persist state| Bucket_State
+    Job_MME ==>|Persist state| Bucket_State
+    Job_EPE ==>|Persist state| Bucket_State
+    Job_ANP ==>|POST chunks to /ingest| CR_Ing
+    Job_MME ==>|POST chunks to /ingest| CR_Ing
+    Job_EPE ==>|POST chunks to /ingest| CR_Ing
+    Job_ANP -.->|BFS scrape| ANP_Portal
+    Job_MME -.->|BFS scrape| MME_Portal
+    Job_EPE -.->|Playwright pagination| EPE_Portal
 ```
 
 ---
@@ -220,16 +230,18 @@ gcloud run deploy securechat-backend \
 
 The frontend is deployed to Firebase Hosting — see Section 6.
 
-### Phase 5 — Crawler Job
+### Phase 5 — Crawler Jobs
 
-> **Known gcloud CLI bug:** `--add-volume-mount` incorrectly rejects valid Unix absolute paths. Use the YAML manifest instead.
+> **Known gcloud CLI bug:** `--add-volume-mount` incorrectly rejects valid Unix absolute paths. Use the YAML manifests instead.
 
-Edit `infra/crawler-job.yaml`: replace `INGEST_URL` with `$ING_URL/ingest` and `namespace` with your project number. Then apply:
+Edit each YAML file: replace `INGEST_URL` with `$ING_URL/ingest` and `namespace` with your project number. Then apply all three:
 ```bash
-gcloud run jobs replace infra/crawler-job.yaml --region=$REGION
+gcloud run jobs replace infra/crawler-job.yaml     --region=$REGION
+gcloud run jobs replace infra/mme-crawler-job.yaml --region=$REGION
+gcloud run jobs replace infra/epe-crawler-job.yaml --region=$REGION
 ```
 
-Grant the Compute SA write access to the state bucket:
+Grant the Compute SA write access to the shared state bucket:
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
 gcloud storage buckets add-iam-policy-binding gs://$BUCKET \
@@ -237,12 +249,32 @@ gcloud storage buckets add-iam-policy-binding gs://$BUCKET \
   --role="roles/storage.objectAdmin"
 ```
 
-Create the weekly Cloud Scheduler trigger (Mondays 03:00 BRT):
+Create weekly Cloud Scheduler triggers (Mondays, staggered 1 h apart, BRT). Each job writes to its own state file in the shared GCS bucket so there is no contention.
+
 ```bash
+# ANP — Monday 03:00 BRT
 gcloud scheduler jobs create http anp-crawler-schedule \
   --location=$REGION \
   --schedule="0 3 * * 1" \
   --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_NUMBER}/jobs/anp-crawler-job:run" \
+  --message-body="{}" \
+  --oauth-service-account-email="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --time-zone="America/Sao_Paulo"
+
+# MME — Monday 04:00 BRT
+gcloud scheduler jobs create http mme-crawler-schedule \
+  --location=$REGION \
+  --schedule="0 4 * * 1" \
+  --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_NUMBER}/jobs/mme-crawler-job:run" \
+  --message-body="{}" \
+  --oauth-service-account-email="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --time-zone="America/Sao_Paulo"
+
+# EPE — Monday 05:00 BRT
+gcloud scheduler jobs create http epe-crawler-schedule \
+  --location=$REGION \
+  --schedule="0 5 * * 1" \
+  --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_NUMBER}/jobs/epe-crawler-job:run" \
   --message-body="{}" \
   --oauth-service-account-email="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --time-zone="America/Sao_Paulo"
@@ -337,7 +369,7 @@ Workflows live in `.github/workflows/`. Each triggers only on path-filtered push
 | `backend.yml` | `backend/**` | Docker build on runner → `gcloud run deploy securechat-backend` |
 | `ingestion.yml` | `ingestion/**` | Docker build on runner → `gcloud run deploy securechat-ingestion` |
 | `dlp.yml` | `dlp-service/**` | Docker build on runner → `gcloud run deploy securechat-dlp` |
-| `crawler.yml` | `infra/crawler-job.yaml` | `gcloud run jobs replace` |
+| `crawler.yml` | `infra/crawler-job.yaml`, `infra/mme-crawler-job.yaml`, `infra/epe-crawler-job.yaml` | `gcloud run jobs replace` for all three jobs |
 
 ### Required GitHub Secrets
 
