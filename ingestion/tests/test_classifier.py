@@ -4,7 +4,8 @@ import fitz  # PyMuPDF
 import openpyxl
 import pytest
 
-from src.classifier import classify_by_subject_path, extract_classification
+from src.classifier import extract_classification
+from src.crawlers.anp import ANPCrawler
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -116,21 +117,33 @@ class TestExtractClassification:
         assert extract_classification(path) == "Internal"
 
 
-# ── TestClassifyBySubjectPath ─────────────────────────────────────────────────
+# ── TestANPCrawlerRouting ─────────────────────────────────────────────────────
 
 
-class TestClassifyBySubjectPath:
-    def test_bar_questions_is_confidential(self):
-        assert classify_by_subject_path("bar-questions") == "Confidential"
+class TestANPCrawlerRouting:
+    """Verify ANPCrawler subject_path routing and classification logic."""
 
-    def test_corporate_answers_is_internal(self):
-        assert classify_by_subject_path("corporate-answers") == "Internal"
+    def setup_method(self):
+        self.crawler = ANPCrawler()
 
-    def test_bu_santos_reserves_is_internal(self):
-        assert classify_by_subject_path("bu/santos/reserves") == "Internal"
+    def test_bar_keyword_routes_to_bar_path(self):
+        url = "https://www.gov.br/anp/pt-br/.../reserva-de-oleo"
+        assert self.crawler.subject_path_for(url) == "regulatory/anp/bar"
 
-    def test_bu_campos_is_internal(self):
-        assert classify_by_subject_path("bu/campos") == "Internal"
+    def test_recursos_keyword_routes_to_bar_path(self):
+        url = "https://www.gov.br/anp/pt-br/.../recursos-exploratorios"
+        assert self.crawler.subject_path_for(url) == "regulatory/anp/bar"
 
-    def test_unknown_path_is_internal(self):
-        assert classify_by_subject_path("some/unknown/path") == "Internal"
+    def test_bar_keyword_routes_to_bar_path_explicit(self):
+        url = "https://www.gov.br/anp/pt-br/.../bar-2024.pdf"
+        assert self.crawler.subject_path_for(url) == "regulatory/anp/bar"
+
+    def test_general_anp_url_routes_to_anp_path(self):
+        url = "https://www.gov.br/anp/pt-br/assuntos/exploracao-e-producao-de-oleo-e-gas"
+        assert self.crawler.subject_path_for(url) == "regulatory/anp"
+
+    def test_bar_path_classifies_confidential(self):
+        assert self.crawler.classification_for("regulatory/anp/bar", "") == "Confidential"
+
+    def test_anp_path_classifies_public(self):
+        assert self.crawler.classification_for("regulatory/anp", "") == "Public"

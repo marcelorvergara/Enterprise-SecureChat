@@ -96,17 +96,3 @@ def extract_classification(file_path: str) -> str:
     return fn(file_path)  # type: ignore[operator]
 
 
-def classify_by_subject_path(subject_path: str) -> str:
-    """Derive a classification level from a document's subject_path routing key.
-
-    Used by the ANP crawler, which cannot read embedded metadata before
-    deciding how to route a file. Rules mirror the access-control intent of
-    the subject_path hierarchy:
-
-    - ``bar-questions`` content is regulatory BAR/ANP compliance material
-      that is accessible only to reserves-coordination — Confidential.
-    - Everything else (corporate-answers, bu/* paths) is Internal.
-    """
-    if subject_path == "bar-questions":
-        return "Confidential"
-    return "Internal"

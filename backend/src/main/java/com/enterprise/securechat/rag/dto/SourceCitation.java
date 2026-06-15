@@ -9,5 +9,7 @@ public record SourceCitation(
         String subjectPath,
         Integer pageNumber,
         String sheetName,
+        String originSource,
+        String jurisdiction,
         float score
 ) {}

@@ -115,6 +115,8 @@ async def ingest(
     file: UploadFile = File(...),
     bu_path: str = Form(...),
     classification_level: str | None = Form(default=None),
+    origin_source: str | None = Form(default=None),
+    jurisdiction: str | None = Form(default=None),
 ) -> IngestResponse:
     """Permanently index a BU-uploaded document into Qdrant under the given bu_path.
 
@@ -186,6 +188,8 @@ async def ingest(
         chunks=enriched,
         ingested_at=datetime.now(timezone.utc).isoformat(),
         classification_level=classification_level,
+        origin_source=origin_source,
+        jurisdiction=jurisdiction,
     )
 
     return IngestResponse(status="indexed", chunks=len(enriched), path=bu_path)

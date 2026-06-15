@@ -113,6 +113,8 @@ public class RagService {
                         payloadString(hit.payload(), "subject_path"),
                         payloadInt(hit.payload(), "page_number"),
                         payloadString(hit.payload(), "sheet_name"),
+                        payloadString(hit.payload(), "origin_source"),
+                        payloadString(hit.payload(), "jurisdiction"),
                         hit.score()
                 ))
                 .toList();
@@ -205,6 +207,8 @@ public class RagService {
                         payloadString(hit.payload(), "subject_path"),
                         payloadInt(hit.payload(), "page_number"),
                         payloadString(hit.payload(), "sheet_name"),
+                        payloadString(hit.payload(), "origin_source"),
+                        payloadString(hit.payload(), "jurisdiction"),
                         hit.score()
                 ))
                 .toList();
@@ -388,6 +392,8 @@ public class RagService {
                         payloadString(hit.payload(), "subject_path"),
                         payloadInt(hit.payload(), "page_number"),
                         payloadString(hit.payload(), "sheet_name"),
+                        payloadString(hit.payload(), "origin_source"),
+                        payloadString(hit.payload(), "jurisdiction"),
                         hit.score()
                 ))
                 .toList();
