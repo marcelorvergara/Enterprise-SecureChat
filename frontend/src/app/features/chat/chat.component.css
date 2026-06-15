@@ -292,11 +292,25 @@
   vertical-align: middle;
 }
 
+.sources-section {
+  overflow: hidden;
+}
+
+.sources-section ::ng-deep .mat-mdc-chip-set {
+  max-width: 100%;
+}
+
 .sources-section ::ng-deep .mat-mdc-chip {
   max-width: 100%;
   background-color: var(--c-chip-bg) !important;
   border: 1px solid var(--c-chip-border) !important;
   color: var(--c-chip-text) !important;
+}
+
+@media (max-width: 480px) {
+  .chip-filename {
+    max-width: 110px;
+  }
 }
 
 .sources-section ::ng-deep .source-chip {
@@ -342,6 +356,11 @@
 .suggestions-row {
   padding: 4px 16px 12px;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.suggestions-row ::ng-deep .mat-mdc-chip-set {
+  max-width: 100%;
 }
 
 .suggestion-chip {
@@ -351,10 +370,19 @@
   border: 1px solid var(--c-chip-border) !important;
   color: var(--c-chip-text) !important;
   transition: background 0.15s;
+  max-width: 100% !important;
+  height: auto !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
 }
 
 .suggestion-chip:hover {
   background: var(--c-chip-h-bg) !important;
+}
+
+.suggestions-row ::ng-deep .mat-mdc-chip-action-label {
+  white-space: normal !important;
+  line-height: 1.4;
 }
 
 /* ── Composer ────────────────────────────────────────────────────────────── */
