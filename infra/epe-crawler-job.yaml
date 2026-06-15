@@ -1,7 +1,7 @@
 apiVersion: run.googleapis.com/v1
 kind: Job
 metadata:
-  name: anp-crawler-job
+  name: epe-crawler-job
   namespace: '196884581650'
   annotations:
     run.googleapis.com/client-name: gcloud
@@ -27,11 +27,11 @@ spec:
             - python
             env:
             - name: CRAWLER_SOURCE
-              value: anp
+              value: epe
             - name: INGEST_URL
               value: https://securechat-ingestion-ik6im6ikgq-uk.a.run.app/ingest
             - name: CRAWLER_MODE
-              value: html
+              value: files
             - name: CRAWLER_MAX_DEPTH_HTML
               value: '4'
             - name: CRAWLER_MAX_DEPTH_FILES
@@ -39,8 +39,9 @@ spec:
             image: us-east4-docker.pkg.dev/enp-securechat/securechat-repo/securechat-ingestion:latest
             resources:
               limits:
+                # Playwright/Chromium needs headroom — 1 Gi avoids OOM during pagination
                 cpu: 1000m
-                memory: 512Mi
+                memory: 1Gi
             volumeMounts:
             - mountPath: /app/data
               name: crawler-state

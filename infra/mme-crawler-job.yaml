@@ -1,7 +1,7 @@
 apiVersion: run.googleapis.com/v1
 kind: Job
 metadata:
-  name: anp-crawler-job
+  name: mme-crawler-job
   namespace: '196884581650'
   annotations:
     run.googleapis.com/client-name: gcloud
@@ -27,7 +27,7 @@ spec:
             - python
             env:
             - name: CRAWLER_SOURCE
-              value: anp
+              value: mme
             - name: INGEST_URL
               value: https://securechat-ingestion-ik6im6ikgq-uk.a.run.app/ingest
             - name: CRAWLER_MODE
