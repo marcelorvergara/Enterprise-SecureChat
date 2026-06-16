@@ -35,12 +35,15 @@ _DEFAULT_ENTITIES = [
 ]
 
 # Belt-and-suspenders allowlist for the PT model.
-# pt_core_news_lg correctly classifies Brazilian geological/basin names as LOC/GPE,
-# but multi-word foreign acronyms (FPSO, LNG) can still score as PERSON.
+# pt_core_news_lg usually classifies Brazilian basin/field names as LOC/GPE, but
+# classification is per-sentence and inconsistent for names that double as common
+# Brazilian surnames (Santos, Campos are both top-5 surnames) — the same basin name
+# can flip to PERSON depending on the sentence it appears in.
 _PERSON_ALLOWLIST = frozenset({
     "ANP", "PPSA", "IBAMA", "INPE", "BNDES", "CNPE", "MME",
     "PETROBRAS", "TOTAL", "SHELL", "BP", "REPSOL", "EQUINOR",
     "FPSO", "LNG", "LPG",
+    "SANTOS", "CAMPOS",
 })
 
 # Minimum confidence for a PERSON detection to be kept.

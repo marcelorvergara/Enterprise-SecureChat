@@ -444,7 +444,7 @@ public class RagService {
                           + "Answer provided: " + fullAnswer.toString().strip();
             var suggestionMessages = List.of(
                     new ClaudeService.ConversationMessage("user", qaContext));
-            var suggestions = generateSuggestions(suggestionMessages, roles);
+            var suggestions = generateSuggestions(suggestionMessages, roles, dlpCount);
 
             // ── 9. Persist assembled answer ───────────────────────────────────
             var cleanedAnswer = fullAnswer.toString().strip();
@@ -478,7 +478,7 @@ public class RagService {
     }
 
     private List<String> generateSuggestions(List<ClaudeService.ConversationMessage> messages,
-                                              List<String> roles) {
+                                              List<String> roles, int[] dlpCount) {
         var suggestionSystemPrompt =
             "You generate follow-up questions for an Oil & Gas enterprise knowledge assistant. "
           + "Respond ONLY with a JSON array of exactly 3 question strings. No prose, no markdown. "
@@ -499,7 +499,11 @@ public class RagService {
                 if (!text.isBlank()) suggestions.add(text);
             }
             return suggestions.stream()
-                    .map(s -> dlpClient.analyze(s, roles).cleanedText())
+                    .map(s -> {
+                        var result = dlpClient.analyze(s, roles);
+                        dlpCount[0] += result.entitiesRedacted();
+                        return result.cleanedText();
+                    })
                     .toList();
         } catch (Exception e) {
             log.warn("generateSuggestions failed: {}", e.getMessage());
