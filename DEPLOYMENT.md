@@ -68,8 +68,8 @@ flowchart TD
         CR_Ing[Cloud Run: securechat-ingestion<br/>Public Ingress · IAM Protected · Port 8001]:::run
 
         Job_ANP[Cloud Run Job: anp-crawler<br/>Monday 03:00 BRT · weekly]:::run
-        Job_MME[Cloud Run Job: mme-crawler<br/>Monday 04:00 BRT · weekly]:::run
-        Job_EPE[Cloud Run Job: epe-crawler<br/>Monday 05:00 BRT · weekly · 1 Gi]:::run
+        Job_MME[Cloud Run Job: mme-crawler<br/>Tuesday 03:00 BRT · weekly]:::run
+        Job_EPE[Cloud Run Job: epe-crawler<br/>Wednesday 03:00 BRT · weekly · 1 Gi]:::run
     end
 
     subgraph Storage_Tier [GCS Object Store]
@@ -249,7 +249,7 @@ gcloud storage buckets add-iam-policy-binding gs://$BUCKET \
   --role="roles/storage.objectAdmin"
 ```
 
-Create weekly Cloud Scheduler triggers (Mondays, staggered 1 h apart, BRT). Each job writes to its own state file in the shared GCS bucket so there is no contention.
+Create weekly Cloud Scheduler triggers — one per day (Mon/Tue/Wed), all at 03:00 BRT. ANP and MME run `CRAWLER_MODE=all` with a 7200 s timeout, so a single 1 h stagger on the same day is not a safe guarantee against overlap; separate days remove the dependency on run duration entirely. Each job also writes to its own state file in the shared GCS bucket, so there is no storage-layer contention either way — see [ingestion/CLAUDE.md](ingestion/CLAUDE.md#cloud-run-job-schedule).
 
 ```bash
 # ANP — Monday 03:00 BRT
@@ -261,19 +261,19 @@ gcloud scheduler jobs create http anp-crawler-schedule \
   --oauth-service-account-email="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --time-zone="America/Sao_Paulo"
 
-# MME — Monday 04:00 BRT
+# MME — Tuesday 03:00 BRT
 gcloud scheduler jobs create http mme-crawler-schedule \
   --location=$REGION \
-  --schedule="0 4 * * 1" \
+  --schedule="0 3 * * 2" \
   --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_NUMBER}/jobs/mme-crawler-job:run" \
   --message-body="{}" \
   --oauth-service-account-email="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --time-zone="America/Sao_Paulo"
 
-# EPE — Monday 05:00 BRT
+# EPE — Wednesday 03:00 BRT
 gcloud scheduler jobs create http epe-crawler-schedule \
   --location=$REGION \
-  --schedule="0 5 * * 1" \
+  --schedule="0 3 * * 3" \
   --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_NUMBER}/jobs/epe-crawler-job:run" \
   --message-body="{}" \
   --oauth-service-account-email="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
@@ -369,7 +369,7 @@ Workflows live in `.github/workflows/`. Each triggers only on path-filtered push
 | `backend.yml` | `backend/**` | Docker build on runner → `gcloud run deploy securechat-backend` |
 | `ingestion.yml` | `ingestion/**` | Docker build on runner → `gcloud run deploy securechat-ingestion` |
 | `dlp.yml` | `dlp-service/**` | Docker build on runner → `gcloud run deploy securechat-dlp` |
-| `crawler.yml` | `infra/crawler-job.yaml`, `infra/mme-crawler-job.yaml`, `infra/epe-crawler-job.yaml` | `gcloud run jobs replace` for all three jobs |
+| `crawler.yml` | `infra/crawler-job.yaml`, `infra/mme-crawler-job.yaml`, `infra/epe-crawler-job.yaml`, **or** completion of `ingestion.yml` | `gcloud run jobs replace` for all three jobs |
 
 ### Required GitHub Secrets
 

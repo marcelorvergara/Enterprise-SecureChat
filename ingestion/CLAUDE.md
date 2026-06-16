@@ -79,6 +79,18 @@ State entry formats (same structure for all three):
 
 Deleting a state file triggers a full re-ingest for that source on the next run — safe but slow. In Cloud Run Jobs, state files persist in the GCS bucket (`enp-securechat-crawler-state`) mounted at `/app/data`.
 
+## Cloud Run Job Schedule
+
+| Crawler | Schedule (BRT) | `CRAWLER_MODE` | `timeoutSeconds` |
+|---------|---------------|----------------|-------------------|
+| ANP | Monday 03:00 | `all` | 7200 |
+| MME | Tuesday 03:00 | `all` | 7200 |
+| EPE | Wednesday 03:00 | `files` | 3600 |
+
+Each crawler runs on its **own day**, not staggered by hour on the same day. ANP and MME run in `all` mode (HTML pages + file downloads in one pass) with a 2-hour timeout — on a cold cache (e.g. the first run after a state file is deleted, or before the cloud bucket has caught up with a local backfill) a single run can legitimately take close to that long. A same-day, 1-hour-apart schedule (the original design) assumed short `html`-only runs and stops being a safe guarantee once a run's duration can approach or exceed the gap to the next job. Putting each crawler on a different day removes the dependency on run duration entirely — there is no timeout value that could make two of these jobs collide.
+
+This is a scheduling/contention precaution only, not a data-safety requirement: each source writes to its own state file (`.crawler_state_{source}.json`), so two crawlers running at the same time would never corrupt each other's state. The actual risk of same-time overlap is contention on the shared, scale-to-zero `securechat-ingestion` service (cold start + concurrent embedding load) and, for EPE specifically, the Playwright/Chromium pass competing for CPU/memory with whatever else is running.
+
 ## Classification Levels
 
 `classifier.py` assigns `classification_level` to every chunk:

@@ -8,12 +8,19 @@ on:
       - 'infra/mme-crawler-job.yaml'
       - 'infra/epe-crawler-job.yaml'
       - '.github/workflows/crawler.yml'
+  workflow_run:
+    workflows: ['Deploy Ingestion']
+    types: [completed]
+    branches: [main]
 
 jobs:
   update:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: google-github-actions/auth@v2
         with:

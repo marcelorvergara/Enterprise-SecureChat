@@ -31,7 +31,7 @@ spec:
             - name: INGEST_URL
               value: https://securechat-ingestion-ik6im6ikgq-uk.a.run.app/ingest
             - name: CRAWLER_MODE
-              value: html
+              value: all
             - name: CRAWLER_MAX_DEPTH_HTML
               value: '4'
             - name: CRAWLER_MAX_DEPTH_FILES
@@ -52,4 +52,4 @@ spec:
             name: crawler-state
           maxRetries: 1
           serviceAccountName: 196884581650-compute@developer.gserviceaccount.com
-          timeoutSeconds: '3600'
+          timeoutSeconds: '7200'
