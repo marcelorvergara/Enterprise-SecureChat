@@ -12,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -61,7 +62,7 @@ public class ConversationService {
 
     @Transactional
     public void setTitle(UUID conversationId, String firstMessage) {
-        conversationRepository.findById(conversationId).ifPresent(conv -> {
+        conversationRepository.findById(Objects.requireNonNull(conversationId)).ifPresent(conv -> {
             var cleaned = firstMessage.replaceAll("[\\r\\n]+", " ").trim();
             conv.setTitle(cleaned.length() > 72 ? cleaned.substring(0, 72) + "…" : cleaned);
             conversationRepository.save(conv);
@@ -75,12 +76,13 @@ public class ConversationService {
 
     @Transactional
     public void delete(UUID conversationId, String userSub) {
-        var conv = conversationRepository.findById(conversationId)
+        var id = Objects.requireNonNull(conversationId);
+        var conv = conversationRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
         if (!conv.getUserSub().equals(userSub)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
-        conversationRepository.deleteById(conversationId);
+        conversationRepository.deleteById(id);
         // ON DELETE CASCADE in the DB handles messages automatically
     }
 

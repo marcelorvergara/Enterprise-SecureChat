@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -60,7 +61,7 @@ public class ConversationController {
 
     @GetMapping("/conversations/{id}")
     public ResponseEntity<ConversationView> getConversation(
-            @PathVariable UUID id,
+            @PathVariable @NonNull UUID id,
             Authentication auth) {
         var jwt = (Jwt) auth.getPrincipal();
         var conv = conversationRepository.findById(id)
@@ -73,7 +74,7 @@ public class ConversationController {
 
     @GetMapping("/conversations/{id}/messages")
     public ResponseEntity<List<MessageView>> getMessages(
-            @PathVariable UUID id,
+            @PathVariable @NonNull UUID id,
             Authentication auth) {
         var jwt = (Jwt) auth.getPrincipal();
         var conv = conversationRepository.findById(id)
@@ -104,7 +105,7 @@ public class ConversationController {
 
     @GetMapping("/conversations/{id}/sources/{chunkId}")
     public ResponseEntity<SourcePreviewResponse> getSourcePreview(
-            @PathVariable UUID id,
+            @PathVariable @NonNull UUID id,
             @PathVariable String chunkId,
             Authentication auth) {
         var jwt = (Jwt) auth.getPrincipal();

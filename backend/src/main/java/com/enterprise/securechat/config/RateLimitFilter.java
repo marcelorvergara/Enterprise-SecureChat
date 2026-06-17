@@ -2,13 +2,13 @@ package com.enterprise.securechat.config;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Refill;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.lang.NonNull;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -31,9 +31,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain chain) throws ServletException, IOException {
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain chain) throws ServletException, IOException {
         var uri = request.getRequestURI();
         if (!"POST".equalsIgnoreCase(request.getMethod())
                 || (!"/api/chat".equals(uri)
@@ -51,7 +51,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         var bucket = buckets.computeIfAbsent(jwt.getSubject(), k ->
                 Bucket.builder()
-                        .addLimit(Bandwidth.classic(CAPACITY, Refill.intervally(CAPACITY, REFILL_PERIOD)))
+                        .addLimit(Bandwidth.builder().capacity(CAPACITY).refillIntervally(CAPACITY, REFILL_PERIOD).build())
                         .build());
 
         if (bucket.tryConsume(1)) {

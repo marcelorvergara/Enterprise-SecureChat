@@ -3,7 +3,9 @@ package com.enterprise.securechat.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.lang.NonNull;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.RestClient;
 
@@ -12,8 +14,8 @@ public class RestClientConfig {
 
     @Bean("qdrantRestClient")
     public RestClient qdrantRestClient(
-            @Value("${qdrant.url}") String qdrantUrl,
-            @Value("${qdrant.api-key}") String qdrantApiKey) {
+            @Value("${qdrant.url}") @NonNull String qdrantUrl,
+            @Value("${qdrant.api-key}") @NonNull String qdrantApiKey) {
         return RestClient.builder()
                 .requestFactory(factory(5_000, 10_000))
                 .baseUrl(qdrantUrl)
@@ -23,7 +25,7 @@ public class RestClientConfig {
 
     @Bean("embedRestClient")
     public RestClient embedRestClient(
-            @Value("${embed-service.url}") String embedUrl,
+            @Value("${embed-service.url}") @NonNull String embedUrl,
             @Value("${embed-service.connect-timeout}") int connectTimeout,
             @Value("${embed-service.read-timeout}") int readTimeout) {
         return RestClient.builder()
@@ -34,7 +36,7 @@ public class RestClientConfig {
 
     @Bean("anthropicRestClient")
     public RestClient anthropicRestClient(
-            @Value("${anthropic.api-key}") String apiKey) {
+            @Value("${anthropic.api-key}") @NonNull String apiKey) {
         return RestClient.builder()
                 .requestFactory(factory(5_000, 60_000))
                 .baseUrl("https://api.anthropic.com")
@@ -45,7 +47,7 @@ public class RestClientConfig {
 
     @Bean("dlpRestClient")
     public RestClient dlpRestClient(
-            @Value("${dlp-service.url}") String dlpUrl,
+            @Value("${dlp-service.url}") @NonNull String dlpUrl,
             @Value("${dlp-service.connect-timeout}") int connectTimeout,
             @Value("${dlp-service.read-timeout}") int readTimeout) {
         return RestClient.builder()
@@ -56,7 +58,7 @@ public class RestClientConfig {
 
     @Bean("parseRestClient")
     public RestClient parseRestClient(
-            @Value("${embed-service.url}") String embedUrl) {
+            @Value("${embed-service.url}") @NonNull String embedUrl) {
         return RestClient.builder()
                 .requestFactory(factory(2_000, 30_000))
                 .baseUrl(embedUrl)
@@ -65,7 +67,7 @@ public class RestClientConfig {
 
     @Bean("ingestRestClient")
     public RestClient ingestRestClient(
-            @Value("${embed-service.url}") String embedUrl) {
+            @Value("${embed-service.url}") @NonNull String embedUrl) {
         return RestClient.builder()
                 .requestFactory(factory(2_000, 120_000))
                 .baseUrl(embedUrl)
@@ -88,7 +90,8 @@ public class RestClientConfig {
         return executor;
     }
 
-    private SimpleClientHttpRequestFactory factory(int connectMs, int readMs) {
+    @NonNull
+    private ClientHttpRequestFactory factory(int connectMs, int readMs) {
         var f = new SimpleClientHttpRequestFactory();
         f.setConnectTimeout(connectMs);
         f.setReadTimeout(readMs);

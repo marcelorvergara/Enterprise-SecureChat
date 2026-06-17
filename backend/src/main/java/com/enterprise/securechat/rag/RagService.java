@@ -20,6 +20,7 @@ import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -454,11 +455,11 @@ public class RagService {
             // ── 10. Final metadata event ──────────────────────────────────────
             var metadata = buildMetadataJson(conversation.getId(), sources,
                     !restrictedPaths.isEmpty(), dlpCount[0], suggestions);
-            emitter.send(SseEmitter.event().name("metadata").data(metadata));
+            emitter.send(SseEmitter.event().name("metadata").data(Objects.requireNonNull(metadata)));
             emitter.complete();
 
         } catch (UncheckedIOException e) {
-            emitter.completeWithError(e.getCause());
+            emitter.completeWithError(Objects.requireNonNull(e.getCause()));
         } catch (Exception e) {
             try { emitter.completeWithError(e); } catch (Exception ignored) {}
         }
@@ -472,7 +473,7 @@ public class RagService {
         String cleaned = result.cleanedText();
         accumulator.append(cleaned).append(" ");
         try {
-            emitter.send(SseEmitter.event().data(cleaned));
+            emitter.send(SseEmitter.event().data(Objects.requireNonNull(cleaned)));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

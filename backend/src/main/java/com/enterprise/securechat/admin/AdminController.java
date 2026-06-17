@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -50,7 +51,7 @@ public class AdminController {
                 .map(role -> {
                     var restrictions = restrictionRepository.findByRoleName(role.getRoleName())
                             .stream()
-                            .map(r -> new RestrictionView(r.getId(), r.getSubjectPath(),
+                            .map(r -> new RestrictionView(Objects.requireNonNull(r.getId()), r.getSubjectPath(),
                                     r.getReason(), r.getCreatedAt()))
                             .toList();
                     return new RoleView(role.getRoleName(), restrictions);
@@ -75,7 +76,7 @@ public class AdminController {
         // Re-read to pick up the DB-generated created_at timestamp
         var refreshed = restrictionRepository.findById(saved.getId()).orElseThrow();
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new RestrictionView(refreshed.getId(), refreshed.getSubjectPath(),
+                .body(new RestrictionView(Objects.requireNonNull(refreshed.getId()), refreshed.getSubjectPath(),
                         refreshed.getReason(), refreshed.getCreatedAt()));
     }
 
@@ -97,7 +98,7 @@ public class AdminController {
         var pageable = PageRequest.of(page, size, Sort.by("accessedAt").descending());
         var result = auditLogRepository.findAllByOrderByAccessedAtDesc(pageable)
                 .map(e -> new AuditLogView(
-                        e.getId(),
+                        Objects.requireNonNull(e.getId()),
                         e.getUserSub(),
                         Arrays.asList(e.getRoleNames()),
                         Arrays.asList(e.getRestrictedPaths()),
