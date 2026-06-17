@@ -74,7 +74,7 @@ public class AdminController {
         restriction.setCreatedBy(jwt.getSubject());
         var saved = restrictionRepository.save(restriction);
         // Re-read to pick up the DB-generated created_at timestamp
-        var refreshed = restrictionRepository.findById(saved.getId()).orElseThrow();
+        var refreshed = restrictionRepository.findById(Objects.requireNonNull(saved.getId())).orElseThrow();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new RestrictionView(Objects.requireNonNull(refreshed.getId()), refreshed.getSubjectPath(),
                         refreshed.getReason(), refreshed.getCreatedAt()));
