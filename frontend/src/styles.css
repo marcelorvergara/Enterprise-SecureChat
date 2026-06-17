@@ -262,6 +262,9 @@ body.theme-light {
 
   /* Typing indicator */
   --c-typing-text:    rgba(0, 0, 0, 0.38);
+
+  /* Source preview chunk background */
+  --c-input-bg:       rgba(0, 0, 0, 0.05);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -379,6 +382,13 @@ mat-divider,
 .mat-mdc-chip .mdc-evolution-chip__icon {
   color: var(--c-chip-text) !important;
   opacity: 0.7;
+}
+
+/* Source preview — truncate long filenames inside chips */
+.meta-chip .mdc-evolution-chip__text-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Tooltip */

@@ -86,8 +86,8 @@ export interface SourcePreviewDialogData {
     .preview-content { min-height: 120px; padding-top: 8px; }
     .preview-loading { display: flex; align-items: center; gap: 12px; padding: 24px 0; color: var(--c-text-muted, #aaa); }
     .preview-error { display: flex; align-items: center; gap: 10px; padding: 24px 0; color: #f59e0b; }
-    .preview-meta { margin-bottom: 12px; }
-    .meta-chip { font-size: 0.78rem; }
+    .preview-meta { margin-bottom: 12px; overflow: hidden; }
+    .meta-chip { font-size: 0.78rem; max-width: 100%; }
     .preview-divider { height: 1px; background: var(--c-border, rgba(255,255,255,0.1)); margin: 8px 0 12px; }
     .preview-chunk-text {
       white-space: pre-wrap;
