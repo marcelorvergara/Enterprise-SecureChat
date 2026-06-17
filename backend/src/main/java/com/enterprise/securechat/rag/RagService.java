@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -77,14 +78,14 @@ public class RagService {
 
         // Strip "ROLE_" prefix to get plain Keycloak role names for FGA lookup
         var roles = auth.getAuthorities().stream()
-                .map(a -> a.getAuthority())
+                .map(GrantedAuthority::getAuthority)
                 .filter(a -> a.startsWith("ROLE_"))
                 .map(a -> a.substring(5))
                 .toList();
 
         // Collect BU group authorities (e.g. GROUP_BU_CAMPOS) for FGA BU isolation
         var groups = auth.getAuthorities().stream()
-                .map(a -> a.getAuthority())
+                .map(GrantedAuthority::getAuthority)
                 .filter(a -> a.startsWith("GROUP_"))
                 .toList();
 
@@ -177,13 +178,13 @@ public class RagService {
         var userSub = jwt.getSubject();
 
         var roles = auth.getAuthorities().stream()
-                .map(a -> a.getAuthority())
+                .map(GrantedAuthority::getAuthority)
                 .filter(a -> a.startsWith("ROLE_"))
                 .map(a -> a.substring(5))
                 .toList();
 
         var groups = auth.getAuthorities().stream()
-                .map(a -> a.getAuthority())
+                .map(GrantedAuthority::getAuthority)
                 .filter(a -> a.startsWith("GROUP_"))
                 .toList();
 
@@ -359,13 +360,13 @@ public class RagService {
         var userSub = jwt.getSubject();
 
         var roles = auth.getAuthorities().stream()
-                .map(a -> a.getAuthority())
+                .map(GrantedAuthority::getAuthority)
                 .filter(a -> a.startsWith("ROLE_"))
                 .map(a -> a.substring(5))
                 .toList();
 
         var groups = auth.getAuthorities().stream()
-                .map(a -> a.getAuthority())
+                .map(GrantedAuthority::getAuthority)
                 .filter(a -> a.startsWith("GROUP_"))
                 .toList();
 

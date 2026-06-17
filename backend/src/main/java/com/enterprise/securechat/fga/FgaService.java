@@ -118,7 +118,7 @@ public class FgaService {
     public Map<String, Object> buildQdrantFilter(
             List<String> restrictedPaths,
             List<String> blockedClassifications) {
-        var mustNot = new ArrayList<>();
+        var mustNot = new ArrayList<Map<String, Object>>();
         if (restrictedPaths != null) {
             restrictedPaths.forEach(path ->
                 mustNot.add(Map.of(

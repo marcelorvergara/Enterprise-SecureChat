@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
 public class QdrantSearchClient {
@@ -37,7 +38,7 @@ public class QdrantSearchClient {
         );
         var response = restClient.post()
                 .uri("/collections/{col}/points/search", collection)
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                 .body(request)
                 .retrieve()
                 .body(SearchResponse.class);

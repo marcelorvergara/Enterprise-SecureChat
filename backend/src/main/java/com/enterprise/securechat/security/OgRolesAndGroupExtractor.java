@@ -23,7 +23,7 @@ public class OgRolesAndGroupExtractor implements Converter<Jwt, Collection<Grant
         List<String> roles = jwt.getClaim(ROLES_CLAIM);
         if (roles != null) {
             roles.stream()
-                .map(r -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + r))
+                .map(r -> new SimpleGrantedAuthority("ROLE_" + r))
                 .forEach(authorities::add);
         }
 
@@ -31,7 +31,7 @@ public class OgRolesAndGroupExtractor implements Converter<Jwt, Collection<Grant
         List<String> groups = jwt.getClaim(GROUPS_CLAIM);
         if (groups != null) {
             groups.stream()
-                .map(g -> (GrantedAuthority) new SimpleGrantedAuthority(
+                .map(g -> new SimpleGrantedAuthority(
                         "GROUP_BU_" + g.replace("bu-", "").toUpperCase()))
                 .forEach(authorities::add);
         }

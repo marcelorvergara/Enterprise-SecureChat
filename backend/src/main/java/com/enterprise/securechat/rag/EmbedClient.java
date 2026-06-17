@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
+import java.util.Objects;
 
 @Component
 public class EmbedClient {
@@ -19,7 +20,7 @@ public class EmbedClient {
     public List<Float> embed(String text) {
         var response = restClient.post()
                 .uri("/embed")
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                 .body(new EmbedRequest(text))
                 .retrieve()
                 .body(EmbedResponse.class);

@@ -8,6 +8,7 @@ import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Component
 public class DlpClient {
@@ -55,7 +56,7 @@ public class DlpClient {
         }
         var response = restClient.post()
                 .uri("/dlp/analyze")
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                 .body(new DlpRequest(text, allow))
                 .retrieve()
                 .body(DlpResponse.class);

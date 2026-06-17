@@ -13,6 +13,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 @Component
@@ -46,7 +47,7 @@ public class ClaudeService {
         var request = new MessagesRequest(model, maxTokens, systemPrompt, messages, false);
         var response = restClient.post()
                 .uri("/v1/messages")
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                 .body(request)
                 .retrieve()
                 .body(MessagesResponse.class);
@@ -78,7 +79,7 @@ public class ClaudeService {
 
         restClient.post()
                 .uri("/v1/messages")
-                .contentType(MediaType.APPLICATION_JSON)
+                .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                 .body(request)
                 .exchange((req, resp) -> {
                     try (var reader = new BufferedReader(

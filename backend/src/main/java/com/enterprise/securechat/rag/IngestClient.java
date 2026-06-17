@@ -31,7 +31,7 @@ public class IngestClient {
 
         var response = restClient.post()
                 .uri("/ingest")
-                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .contentType(Objects.requireNonNull(MediaType.MULTIPART_FORM_DATA))
                 .body(map)
                 .retrieve()
                 .body(IngestResponse.class);

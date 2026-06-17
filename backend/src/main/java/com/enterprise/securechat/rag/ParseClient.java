@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.Objects;
 
 @Component
 public class ParseClient {
@@ -30,7 +31,7 @@ public class ParseClient {
         body.add("file", resource);
         var response = restClient.post()
                 .uri("/parse")
-                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .contentType(Objects.requireNonNull(MediaType.MULTIPART_FORM_DATA))
                 .body(body)
                 .retrieve()
                 .body(ParseResponse.class);
