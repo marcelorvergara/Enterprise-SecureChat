@@ -4,6 +4,54 @@
 
 ---
 
+## Architectural Trade-offs & Engineering Decisions
+
+These four decisions define how the system handles the hardest enterprise constraints — authorization integrity, connection pool exhaustion, real-time compliance, and audit completeness. Each required choosing between two approaches that both appear reasonable, and each choice has a concrete consequence if reversed.
+
+### 1. FGA Enforced at the Storage Layer, Not the Application Layer
+
+`FgaService.buildQdrantFilter()` produces a `must_not` filter on the `ancestor_paths` payload field passed directly to Qdrant — before any embedding is ranked, before any chunk reaches Java, before the LLM is invoked.
+
+**Why not filter in application code?** Post-retrieval filtering is architecturally unsafe in a RAG system. If Qdrant returns 10 chunks and Java discards 3 due to FGA rules, the LLM still receives 7 chunks — but those 7 were semantically ranked relative to the full corpus, including the restricted documents. The ranking itself leaks signal. Enforcing at the storage layer makes restricted documents invisible to the semantic search, not merely dropped after it.
+
+**The contract:** Every ingested document carries `ancestor_paths: ["bu", "bu/santos", "bu/santos/reserves"]`. Restricting a parent path silently blocks all descendants — no recursive traversal required. If the field name diverges between the ingestion pipeline and `FgaService`, the security model breaks silently with no runtime error. This is the most critical invariant in the codebase.
+
+### 2. Non-Transactional RAG Orchestration
+
+`RagService.chat()` and `chatStream()` are deliberately not annotated `@Transactional`.
+
+The RAG orchestration method performs three sequential external HTTP calls: an embed call to the ingestion service (~1–2 s), a Qdrant semantic search (~1–5 s), and Claude inference (~15–60 s). Annotating this method `@Transactional` would hold a HikariCP connection open for the full duration. With `maximum-pool-size: 5` (Neon free-tier limit), five concurrent users would exhaust the pool entirely and all subsequent requests would queue behind them. Each database operation — conversation save, audit log write — runs in its own short-lived transaction via the injected services instead.
+
+### 3. Post-LLM DLP with Sentence-Boundary Buffering
+
+DLP runs after Claude generates its answer. For the SSE streaming endpoint, tokens are buffered until a sentence boundary is confirmed before being dispatched to the Presidio microservice.
+
+**Why not redact before sending to Claude?** An authorized `reserves-management` user querying barrel prices would receive a response grounded in `[REDACTED]` context — producing useless output. The FGA layer governs which documents a user can reach; DLP governs what figures escape into the final answer regardless of authorization. These are orthogonal concerns: collapsing them would break the system for the users it's designed to serve.
+
+**Why sentence boundaries?** Microsoft Presidio's NER models require full sentence context. A person's name or a financial clause split across two token batches may go undetected. Buffering to a confirmed sentence boundary ensures Presidio has sufficient context for accurate entity detection. Cross-sentence entity spans remain a known limitation of this approach.
+
+**Why `pt_core_news_lg`?** Brazilian geological basin and field names — Pré-Sal, Campos, Santos — are classified as `LOC`/`GPE` by the Portuguese model. The English `en_core_web_lg` misclassifies them as `PERSON`, producing false positives that redact core O&G terminology.
+
+### 4. Zero-Trace Compliance Audit
+
+`AuditService.log()` stores `SHA-256(rawPrompt)` in `restriction_audit_log.query_hash`. The raw prompt string is hashed in memory and immediately discarded — it is never written to any database column, log stream, or audit record.
+
+The audit log must satisfy two competing requirements: prove a specific query was submitted, and ensure the prompt content cannot be reconstructed at rest. A SHA-256 hash satisfies the first (by providing the plaintext for verification) while making reconstruction computationally infeasible. This also eliminates any LGPD data-residency concern about storing raw user input.
+
+### Residual Security Risks
+
+The three-layer security mesh (FGA + DLP + audit log) is strong on the output side — what users receive is tightly controlled. The following risks exist on the input side of the LLM call and are documented here to set accurate expectations for any deployment.
+
+| Risk | Real? | Mitigation in place |
+|---|---|---|
+| **Raw document chunks sent to Anthropic API** | Yes | Anthropic's enterprise data processing agreement prohibits training on API input. Shifting DLP left is architecturally possible but breaks RAG quality for authorized users — see §3 above. |
+| **Qdrant stores unredacted chunk text** | Yes | Qdrant API key required for all operations; the `qdrant` container is on an isolated Docker network with no public port. If Qdrant is compromised, raw chunk text is exposed. |
+| **Spring Boot HTTP client logging** | Mitigated | `org.springframework.web.client` is pinned to `WARN` in `application.yml`. At `DEBUG`, Spring's `RestClient` emits request headers — which would expose the `x-api-key` sent to Anthropic. |
+
+**Alternative: keep data inside your cloud boundary.** If sending raw text to Anthropic's API is unacceptable under your data classification policy, routing Claude calls through AWS Bedrock or GCP Vertex AI keeps inference within your cloud region under that provider's enterprise data agreements. The only code change required is the base URL and auth headers in `RestClientConfig.java`.
+
+---
+
 ## Product Overview
 
 E&P SecureChat transforms how Exploration & Production teams interact with their institutional knowledge. Analysts, reservoir engineers, BU managers, and compliance officers all share a single conversational interface — yet each sees precisely what their role permits, enforced not by application logic that can be bypassed, but by a cryptographic path filter applied inside the vector database before the language model is ever invoked.
@@ -283,22 +331,3 @@ Navigate to http://localhost:4200. Auth0 Universal Login handles authentication.
 | `reserves-coordination` | Cross-BU reserves + `bar-questions` regulatory | Yes |
 | `reservoir-team` | Reservoir engineering read-only; blocked from `bar-questions` | No |
 
----
-
-## Security Trade-offs & Residual Risks
-
-The three-layer security mesh (FGA + DLP + audit log) is strong on the _output_ side — what users see is tightly controlled. The following residual risks exist on the _input_ side of the LLM call and are documented here to set accurate expectations for any deployment.
-
-| Risk | Real? | Mitigation in place |
-|---|---|---|
-| **Raw document chunks sent to Anthropic API** | Yes | Anthropic's [enterprise data processing agreement](https://www.anthropic.com/legal/privacy) prohibits training on API input. Shifting DLP left (redacting before sending to Claude) is architecturally possible but would break RAG retrieval quality — the financial figures and reserve volumes being redacted are the primary query targets for authorized users. |
-| **Qdrant stores unredacted text** | Yes | Qdrant API key required for all operations; the `qdrant` container is on an isolated Docker network with no public port. On GCP, Qdrant Cloud enforces API key auth over TLS. If Qdrant is compromised, raw chunk text is exposed. |
-| **Spring Boot HTTP client logging** | Mitigated | `org.springframework.web.client` is pinned to `WARN` in `application.yml`. At `DEBUG`, Spring's `RestClient` emits request headers — which would expose the `x-api-key` sent to Anthropic. `SimpleClientHttpRequestFactory` does not buffer or log request/response bodies at any log level. |
-
-### Why pre-LLM redaction is not the fix
-
-Shifting DLP left — redacting chunks before packaging the Claude prompt — sounds like the right answer but defeats the system's purpose. An authorized `reserves-management` user querying barrel prices would receive a response grounded in `[REDACTED]` context, producing useless output. The FGA layer already governs _who_ can reach _which_ documents; DLP governs what leaks into the _final answer_ regardless of authorization level.
-
-### Alternative: keep data inside your cloud boundary
-
-If sending raw text to Anthropic's API is unacceptable under your organization's data classification policy, the lowest-disruption alternative is routing Claude calls through **AWS Bedrock** or **GCP Vertex AI** (both offer Claude models). The API call stays within your chosen cloud region under that provider's enterprise data agreements, and the only code change required is the base URL and auth headers in `RestClientConfig.java`.
