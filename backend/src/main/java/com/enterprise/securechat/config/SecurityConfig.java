@@ -51,6 +51,9 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/health", "/actuator/health").permitAll()
+                // Gated by a shared-secret header (X-Internal-Key) inside InternalMetricsController
+                // instead of the Auth0 JWT filter — the caller is monitoring-links, not a user.
+                .requestMatchers("/internal/**").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2

@@ -32,6 +32,11 @@ public class ClaudeService {
         this.objectMapper = objectMapper;
     }
 
+    /** Exposes the configured model name for telemetry — avoids duplicating the @Value binding elsewhere. */
+    public String getModel() {
+        return model;
+    }
+
     /**
      * Sends a blocking request to the Anthropic Messages API and returns the text response.
      * Blocking (non-streaming) is intentional — required for DLP post-processing in M4.

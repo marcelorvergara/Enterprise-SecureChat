@@ -6,7 +6,7 @@
 
 ## Architectural Trade-offs & Engineering Decisions
 
-These four decisions define how the system handles the hardest enterprise constraints — authorization integrity, connection pool exhaustion, real-time compliance, and audit completeness. Each required choosing between two approaches that both appear reasonable, and each choice has a concrete consequence if reversed.
+These five decisions define how the system handles the hardest enterprise constraints — authorization integrity, connection pool exhaustion, real-time compliance, audit completeness, and operational observability. Each required choosing between two approaches that both appear reasonable, and each choice has a concrete consequence if reversed.
 
 ### 1. FGA Enforced at the Storage Layer, Not the Application Layer
 
@@ -37,6 +37,16 @@ DLP runs after Claude generates its answer. For the SSE streaming endpoint, toke
 `AuditService.log()` stores `SHA-256(rawPrompt)` in `restriction_audit_log.query_hash`. The raw prompt string is hashed in memory and immediately discarded — it is never written to any database column, log stream, or audit record.
 
 The audit log must satisfy two competing requirements: prove a specific query was submitted, and ensure the prompt content cannot be reconstructed at rest. A SHA-256 hash satisfies the first (by providing the plaintext for verification) while making reconstruction computationally infeasible. This also eliminates any LGPD data-residency concern about storing raw user input.
+
+### 5. Fire-and-Forget LLM Observability, Not a Managed Platform
+
+ADR-002 rejects a managed or self-hosted LLM observability platform (Langfuse, Phoenix) in favor of bespoke logging into the app's existing Neon database, aggregated by a separate `monitoring-links` service and rendered on an external dashboard.
+
+**Why not Langfuse?** A managed tracing platform means a new external dependency, a new credential to rotate, and (for the hosted tier) sending prompt/response content to a third party — which cuts against the same "zero-trace" posture that shapes the audit log in §4. A single `llm_telemetry` row (latency, token estimate, cost estimate, success flag) captures everything the operational dashboard actually needs without a new trust boundary.
+
+**Why fire-and-forget instead of synchronous?** `RagService` dispatches the telemetry write via `CompletableFuture.runAsync(...)` on a small bounded executor (core 2 / max 4 / queue 100, `DiscardPolicy`) — never blocking the chat response, and never propagating a telemetry failure into a user-facing error. If the queue is ever full, an event is silently dropped rather than slowing down or breaking a chat request; observability is explicitly lower-priority than the product itself.
+
+**The trade-off:** token counts are a chars/4 heuristic, not Anthropic's real `usage` field — capturing exact counts would mean changing `ClaudeService.complete()`'s return type on every call site. Cost figures are accordingly estimates, adequate for a trend-level dashboard but not for billing reconciliation. `GET /internal/llm-metrics` is gated by a shared-secret header rather than Auth0 JWT, since its only caller is another backend, not a logged-in user.
 
 ### Residual Security Risks
 

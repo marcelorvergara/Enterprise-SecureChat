@@ -20,7 +20,9 @@ src/main/java/com/enterprise/securechat/
 ├── rag/            RagController, RagService, ParseClient, EmbedClient, IngestClient,
 │                   DocumentController, QdrantSearchClient, ClaudeService, DlpClient,
 │                   SentenceBoundaryDetector, dto/
-└── security/       OgRolesAndGroupExtractor (reads `https://enpsecurechat.com/roles` claim)
+├── security/       OgRolesAndGroupExtractor (reads `https://enpsecurechat.com/roles` claim)
+└── telemetry/      LlmTelemetry(+Repository), LlmTelemetryService, LlmCostEstimator,
+                    InternalMetricsController — ADR-002 bespoke LLM observability
 ```
 
 ## Security-Critical Classes
@@ -29,6 +31,7 @@ src/main/java/com/enterprise/securechat/
 - **`AuditService.log()`** — stores `SHA-256(prompt)` only. Never write raw prompt text anywhere — constraint #4.
 - **`OgRolesAndGroupExtractor`** — maps Auth0 JWT roles claim to Spring `ROLE_` authorities and `GROUP_BU_xxx` granted authorities.
 - **`DocumentController.extractBuPath()`** — derives BU path server-side from `GROUP_BU_xxx`. Never accept a `bu_path` from the client — constraint #12.
+- **`InternalMetricsController`** — `GET /internal/llm-metrics` is gated by `X-Internal-Key` (constant-time compare against `INTERNAL_METRICS_KEY`), not Auth0 JWT. `SecurityConfig` permits `/internal/**` — constraint #13. The constructor throws `IllegalStateException` if `INTERNAL_METRICS_KEY` is blank/unset — a deliberate fail-fast: `MessageDigest.isEqual` on two empty byte arrays returns `true`, so without this guard a blank secret would silently authenticate any request sending an empty `X-Internal-Key` header. Never remove the blank checks in `isValidKey()` or the constructor.
 
 ## `RestClientConfig` Bean Summary
 
@@ -39,6 +42,8 @@ src/main/java/com/enterprise/securechat/
 | `claudeRestClient` | `https://api.anthropic.com` | connect 2 s / read 120 s |
 | `dlpRestClient` | `http://dlp-service:8000` | connect 2 s / read 60 s |
 | `ingestRestClient` | `http://ingestion:8001` | connect 2 s / read 300 s |
+
+`llmTelemetryExecutor` (bean, not a `RestClient`) — bounded `ThreadPoolTaskExecutor` (core 2 / max 4 / queue 100, `DiscardPolicy`) backing fire-and-forget `llm_telemetry` writes from `RagService`. See root `CLAUDE.md` constraint #13.
 
 ## `ClaudeService` Methods
 
@@ -61,6 +66,8 @@ Do not raise the 1024 default — constraint #10 in root CLAUDE.md. Do not reduc
 | `SentenceBoundaryDetectorTest` | ICU4J pt_BR sentence splits; decimal numbers, abbreviations, token-by-token streaming, flush behaviour (16 cases) |
 | `ConversationServiceTest` | Delete success, 403 (wrong owner), 404 |
 | `AdminControllerTest` | `@WebMvcTest`; 401 unauthenticated, 403 employee, 200 admin |
+| `LlmTelemetryServiceTest` | `record()` persists; repository failures are logged, never thrown |
+| `InternalMetricsControllerTest` | `@WebMvcTest`; 401 missing/wrong `X-Internal-Key`, 200 with correct key, no JWT required |
 
 ## Rate Limiting
 

@@ -72,9 +72,19 @@ messages(
   role TEXT CHECK IN ('user','assistant'),
   content TEXT, sources JSONB, dlp_redacted INTEGER, created_at TIMESTAMPTZ
 )
+
+-- LLM observability (ADR-002) — written fire-and-forget by LlmTelemetryService,
+-- never read on the request path. Backs GET /internal/llm-metrics.
+llm_telemetry(
+  id UUID, occurred_at TIMESTAMPTZ, endpoint TEXT, model TEXT,
+  latency_ms INTEGER,        -- Claude call latency only, not full RAG pipeline latency
+  input_tokens INTEGER, output_tokens INTEGER,   -- chars/4 estimate, not real Anthropic usage
+  cost_usd NUMERIC(10,6),    -- estimate derived from the token estimate above
+  success BOOLEAN, error_message TEXT
+)
 ```
 
-Full DDL: [infra/migrations/init.sql](../infra/migrations/init.sql)
+Full DDL: [infra/migrations/init.sql](../infra/migrations/init.sql) (core schema), [infra/migrations/002_llm_telemetry.sql](../infra/migrations/002_llm_telemetry.sql) (`llm_telemetry`)
 
 ### 4.2 Qdrant Collection (`enterprise_knowledge`)
 
@@ -230,6 +240,21 @@ Returns the raw chunk payload for a source citation. Performs ownership check (4
   "chunkIndex":   2
 }
 ```
+
+### Shared-Secret Endpoints (backend port 3000, no Auth0 JWT)
+
+#### `GET /internal/llm-metrics` _(ADR-002 telemetry)_
+Auth: `X-Internal-Key` header, checked against `INTERNAL_METRICS_KEY` — not a Bearer JWT. Polled by `monitoring-links`, not called from the browser; `SecurityConfig` explicitly `permitAll`s `/internal/**` and `InternalMetricsController` owns the entire auth decision from there. Returns 24h-trailing aggregates over `llm_telemetry`, a table populated fire-and-forget by `RagService` from `chat()`, `chatWithDocument()`, and `chatStream()` (see `LlmTelemetryService`, `LlmCostEstimator`). Field names are snake_case to match monitoring-links' cross-repo contract verbatim, since it relays these numbers as-is.
+```json
+{
+  "requests_24h":    42,
+  "avg_latency_ms":  1234.5,
+  "tokens_24h":      98765,
+  "cost_usd_24h":    1.2346,
+  "error_rate_pct":  2.5
+}
+```
+Token counts are a chars/4 heuristic, not Anthropic's real `usage` field — capturing exact counts would require changing `ClaudeService.complete()`'s return type across every call site. `cost_usd_24h` is accordingly an estimate, not a billing-accurate figure.
 
 ### Internal Endpoints (Docker `internal` network only)
 

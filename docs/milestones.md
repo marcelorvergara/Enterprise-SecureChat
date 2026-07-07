@@ -1,6 +1,6 @@
 # Enterprise SecureChat — Implementation History
 
-Complete record of delivered milestones. All milestones are complete as of M18.
+Complete record of delivered milestones. All milestones are complete as of M20.
 
 For current architecture, constraints, and API contracts see [CLAUDE.md](../CLAUDE.md), [spec.md](spec.md), and [cloud.md](cloud.md).
 
@@ -27,6 +27,7 @@ For current architecture, constraints, and API contracts see [CLAUDE.md](../CLAU
 | **Sprint 2 — Compliance Moat** | Enterprise Document Classification Sync (13 SP) | M15 | Three-tier clearance (Public / Internal / Confidential) enforced at Qdrant layer via `classification_level` `must_not` clause |
 | **Sprint 3 — Engagement & Insights** | AI Suggested Follow-ups (8 SP) · Admin Security Heatmap (13 SP) | M16, M17 | Structured JSON from Claude with DLP-scanned chip suggestions; Chart.js bar charts for FGA block frequency and DLP redaction density |
 | **Sprint 4 — Regulatory Data Expansion** | Multi-Source Crawler (13 SP) | M19 | `BaseCrawler` + `PloneMixin` refactor; `--source` flag; MMECrawler (gov.br Plone); EPECrawler (Playwright JS-paginated listing); three Cloud Run Jobs with staggered weekly schedules |
+| **Sprint 5 — LLM Observability** | Bespoke Telemetry (ADR-002) (8 SP) | M20 | Fire-and-forget `llm_telemetry` logging from `RagService`; `GET /internal/llm-metrics` shared-secret endpoint polled by `monitoring-links` |
 
 ---
 
@@ -67,3 +68,6 @@ Claude instructed via `JSON_FORMAT_INSTRUCTION` to return `{"answer":"...","sugg
 
 ### M18 — FGA Classification Security Audit (CI/CD)
 `ingestion/tests/test_classification_fga_integration.py` — full pytest refactor with `pytest.mark.integration`, session-scoped `ingested_points` fixture, 4 test classes (`TestPayloadAudit`, `TestLowClearanceIsolation`, `TestHighClearanceElevation`, `TestIdEnumerationAttack`). `.github/workflows/security-audit.yml` — triggers on push/PR to `main` for `ingestion/src/**` or `backend/**/fga/**` changes; caches HuggingFace model; polls `/health`, runs pytest. `Makefile` at project root — `make security-audit` and `make security-audit-fixtures`.
+
+### M20 — LLM Observability (ADR-002)
+Bespoke async telemetry instead of a managed platform (Langfuse/Phoenix) — logs into the app's existing Neon database, aggregated by `monitoring-links` and rendered on the `mvergara.net` Mission Control dashboard, same shape as its existing `pipeline_health` panel. New `llm_telemetry` table (`infra/migrations/002_llm_telemetry.sql`). New `telemetry` package: `LlmTelemetryService` (its own `@Component`, not a `RagService` method, to avoid the `@Async` self-invocation proxy trap), `LlmCostEstimator` (chars/4 token heuristic + per-model USD/1K pricing table), `LlmTelemetryRepository` (native-query 24h aggregate projection), `InternalMetricsController`. Bounded `llmTelemetryExecutor` bean (core 2 / max 4 / queue 100, `DiscardPolicy`) added to `RestClientConfig`. `RagService.chat()`, `chatWithDocument()`, and `chatStream()` dispatch telemetry via `CompletableFuture.runAsync(...)` around their Claude calls, recording latency/tokens/cost/success/error without ever blocking the request thread or calling `.get()`/`.join()`. `GET /internal/llm-metrics` returns snake_case 24h aggregates (`requests_24h`, `avg_latency_ms`, `tokens_24h`, `cost_usd_24h`, `error_rate_pct`) matching the cross-repo contract with `monitoring-links` exactly, gated by a constant-time `X-Internal-Key` check against `INTERNAL_METRICS_KEY` instead of Auth0 JWT (`SecurityConfig` permits `/internal/**`). The controller fails fast at boot (`IllegalStateException`) if the secret is blank — `MessageDigest.isEqual` on two empty byte arrays returns `true`, so without that guard a misconfigured empty secret would silently authenticate any request sending an empty `X-Internal-Key` header. Deployed to Cloud Run via a new `INTERNAL_METRICS_KEY` Secret Manager entry (`DEPLOYMENT.md` Phase 1 + Phase 4 updated); `backend.yml`'s bare `gcloud run deploy` inherits it on future redeploys with no workflow change needed.

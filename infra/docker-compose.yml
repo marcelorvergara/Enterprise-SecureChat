@@ -90,6 +90,7 @@ services:
       DLP_SERVICE_URL: http://dlp-service:8000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       CLAUDE_MODEL: claude-sonnet-4-6
+      INTERNAL_METRICS_KEY: ${INTERNAL_METRICS_KEY}
     depends_on:
       qdrant:
         condition: service_started

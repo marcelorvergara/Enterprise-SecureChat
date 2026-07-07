@@ -155,19 +155,22 @@ gcloud artifacts repositories create securechat-repo \
 gcloud auth configure-docker $REGION-docker.pkg.dev
 ```
 
-Create the three secrets (run interactively — paste values when prompted):
+Create the four secrets (run interactively — paste values when prompted):
 ```bash
 printf '%s' "$ANTHROPIC_API_KEY_VALUE"       | gcloud secrets create ANTHROPIC_API_KEY       --data-file=-
 printf '%s' "$QDRANT_API_KEY_VALUE"           | gcloud secrets create QDRANT_API_KEY           --data-file=-
 printf '%s' "$SPRING_DATASOURCE_PASSWORD_VAL" | gcloud secrets create SPRING_DATASOURCE_PASSWORD --data-file=-
+printf '%s' "$INTERNAL_METRICS_KEY_VALUE"     | gcloud secrets create INTERNAL_METRICS_KEY     --data-file=-
 ```
+
+> `INTERNAL_METRICS_KEY` (ADR-002) is a shared secret with `monitoring-links`, not a third-party credential — generate it with e.g. `openssl rand -hex 32` and hand the same value to whoever configures monitoring-links' poller. It gates `GET /internal/llm-metrics` via the `X-Internal-Key` header instead of Auth0 JWT.
 
 Grant the default Compute SA permission to read the secrets:
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
 SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
-for SECRET in ANTHROPIC_API_KEY QDRANT_API_KEY SPRING_DATASOURCE_PASSWORD; do
+for SECRET in ANTHROPIC_API_KEY QDRANT_API_KEY SPRING_DATASOURCE_PASSWORD INTERNAL_METRICS_KEY; do
   gcloud secrets add-iam-policy-binding $SECRET \
     --member="serviceAccount:${SA}" \
     --role="roles/secretmanager.secretAccessor"
@@ -225,8 +228,10 @@ gcloud run deploy securechat-backend \
   --region=$REGION --port=3000 --min-instances=0 \
   --ingress=all --allow-unauthenticated \
   --set-env-vars="SPRING_DATASOURCE_URL=$NEON_DB_URL,SPRING_DATASOURCE_USERNAME=$NEON_DB_USER,QDRANT_URL=$QDRANT_CLOUD_URL,AUTH0_ISSUER_URI=$AUTH0_ISSUER,AUTH0_AUDIENCE=$AUTH0_AUDIENCE,DLP_SERVICE_URL=$DLP_URL,EMBED_SERVICE_URL=$ING_URL,CORS_ALLOWED_ORIGINS=https://enpsecurechat.com" \
-  --set-secrets="ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,QDRANT_API_KEY=QDRANT_API_KEY:latest,SPRING_DATASOURCE_PASSWORD=SPRING_DATASOURCE_PASSWORD:latest"
+  --set-secrets="ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,QDRANT_API_KEY=QDRANT_API_KEY:latest,SPRING_DATASOURCE_PASSWORD=SPRING_DATASOURCE_PASSWORD:latest,INTERNAL_METRICS_KEY=INTERNAL_METRICS_KEY:latest"
 ```
+
+> **Note on `backend.yml`'s redeploys:** the CI workflow's `gcloud run deploy` (Section 7) passes no `--set-env-vars`/`--set-secrets` at all — Cloud Run inherits every unspecified field from the previously serving revision, so secrets/env vars configured here (or via a one-off `gcloud run services update --update-secrets=...`) persist across ordinary code-triggered redeploys without needing to touch the workflow file. If a secret is ever missing after a deploy, it means it was never attached to any prior revision, not that CI dropped it.
 
 The frontend is deployed to Firebase Hosting — see Section 6.
 

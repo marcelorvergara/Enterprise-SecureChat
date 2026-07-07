@@ -9,6 +9,8 @@ import org.springframework.lang.NonNull;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.RestClient;
 
+import java.util.concurrent.ThreadPoolExecutor;
+
 @Configuration
 public class RestClientConfig {
 
@@ -86,6 +88,25 @@ public class RestClientConfig {
         executor.setMaxPoolSize(10);
         executor.setQueueCapacity(20);
         executor.setThreadNamePrefix("sse-");
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * Executor for fire-and-forget LLM telemetry writes (ADR-002). Bounded core/max/queue
+     * so a Neon hiccup can't pile up unbounded work; DiscardPolicy means a full queue drops
+     * the telemetry event instead of throwing RejectedExecutionException back onto whichever
+     * request thread called CompletableFuture.runAsync(...) — telemetry is best-effort and
+     * must never fail a chat response.
+     */
+    @Bean("llmTelemetryExecutor")
+    public ThreadPoolTaskExecutor llmTelemetryExecutor() {
+        var executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("llm-telemetry-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
         executor.initialize();
         return executor;
     }

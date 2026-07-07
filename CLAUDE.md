@@ -67,7 +67,8 @@ Enterprise-SecureChat/
 │   ├── health/         HealthController
 │   ├── rag/            RagController, RagService, ParseClient, EmbedClient, IngestClient,
 │   │                   DocumentController, QdrantSearchClient, ClaudeService, DlpClient, dto/
-│   └── security/       OgRolesAndGroupExtractor (pulls `https://enpsecurechat.com/roles` from Auth0 JWT)
+│   ├── security/       OgRolesAndGroupExtractor (pulls `https://enpsecurechat.com/roles` from Auth0 JWT)
+│   └── telemetry/      LlmTelemetryService (fire-and-forget) + InternalMetricsController (ADR-002)
 ├── dlp-service/src/
 │   ├── main.py         FastAPI: POST /dlp/analyze, GET /health
 │   ├── analyzer.py     Presidio engines (module-level singletons)
@@ -152,6 +153,9 @@ Both share the same `/ingest` endpoint. Never index crawler-managed files in the
 ### 12. `POST /api/documents/ingest` — BU path is always server-side derived
 `DocumentController.extractBuPath()` maps the caller's `GROUP_BU_xxx` authority to `bu/{name}/reserves`. Never add a `bu_path` request parameter — a user could index under another BU's path and bypass FGA.
 
+### 13. LLM telemetry (ADR-002) is fire-and-forget and must never touch the request thread
+`RagService` dispatches `LlmTelemetryService.record(...)` via `CompletableFuture.runAsync(...)` on the bounded `llmTelemetryExecutor` bean (core 2 / max 4, `DiscardPolicy` on a full queue) from `chat()`, `chatWithDocument()`, and `chatStream()`. Never call `.get()`/`.join()` on that future, and never make `LlmTelemetryService` a method on `RagService` itself — `@Async` self-invocation through the CGLIB proxy silently no-ops, which is why it's a separate `@Component`. `GET /internal/llm-metrics` is gated by the `X-Internal-Key` header (checked against `INTERNAL_METRICS_KEY`) instead of the Auth0 JWT filter — it's polled by `monitoring-links`, not called by a logged-in user. `SecurityConfig` permits `/internal/**`; the controller owns the entire auth decision from there. `InternalMetricsController` fails fast at boot (`IllegalStateException`) if the secret is blank/unset — `MessageDigest.isEqual` on two empty arrays returns `true`, so a blank secret without this guard would silently authenticate any request sending an empty `X-Internal-Key` header. Never remove that check. Token counts in `llm_telemetry` are a chars/4 estimate, not real Anthropic `usage` figures — getting exact counts would mean changing `ClaudeService.complete()`'s return type on every call site.
+
 ## Key Configuration (application.yml)
 
 ```yaml
@@ -189,5 +193,6 @@ Roles injected via **Post-Login Action** into the `https://enpsecurechat.com/rol
 | `QDRANT_API_KEY` | backend, ingestion | Set in Qdrant via `QDRANT__SERVICE__API_KEY` |
 | `QDRANT_URL` | backend, ingestion | Cloud URL or `http://qdrant:6333` locally |
 | `CRAWLER_MODE` | ingestion | `files` (default), `html`, or `all` |
+| `INTERNAL_METRICS_KEY` | backend | Shared secret for `X-Internal-Key` on `GET /internal/llm-metrics`; must match monitoring-links' value |
 
 All variables documented in `infra/.env.example`. Never commit `infra/.env`.

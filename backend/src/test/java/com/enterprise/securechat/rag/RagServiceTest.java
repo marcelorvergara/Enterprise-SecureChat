@@ -5,6 +5,7 @@ import com.enterprise.securechat.conversation.Conversation;
 import com.enterprise.securechat.conversation.ConversationService;
 import com.enterprise.securechat.fga.FgaService;
 import com.enterprise.securechat.rag.dto.ChatRequest;
+import com.enterprise.securechat.telemetry.LlmTelemetryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +23,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -37,6 +39,8 @@ class RagServiceTest {
     @Mock private DlpClient dlpClient;
     @Mock private ConversationService conversationService;
     @Mock private AuditService auditService;
+    @Mock private LlmTelemetryService llmTelemetryService;
+    @Mock private Executor llmTelemetryExecutor;
 
     @InjectMocks
     private RagService ragService;

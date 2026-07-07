@@ -6,9 +6,12 @@ import com.enterprise.securechat.fga.FgaService;
 import com.enterprise.securechat.rag.dto.ChatRequest;
 import com.enterprise.securechat.rag.dto.ChatResponse;
 import com.enterprise.securechat.rag.dto.SourceCitation;
+import com.enterprise.securechat.telemetry.LlmCostEstimator;
+import com.enterprise.securechat.telemetry.LlmTelemetryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -22,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 @Service
@@ -48,6 +53,8 @@ public class RagService {
     private final DlpClient dlpClient;
     private final ConversationService conversationService;
     private final AuditService auditService;
+    private final LlmTelemetryService llmTelemetryService;
+    private final Executor llmTelemetryExecutor;
 
     public RagService(FgaService fgaService,
                       EmbedClient embedClient,
@@ -55,7 +62,9 @@ public class RagService {
                       ClaudeService claudeService,
                       DlpClient dlpClient,
                       ConversationService conversationService,
-                      AuditService auditService) {
+                      AuditService auditService,
+                      LlmTelemetryService llmTelemetryService,
+                      @Qualifier("llmTelemetryExecutor") Executor llmTelemetryExecutor) {
         this.fgaService = fgaService;
         this.embedClient = embedClient;
         this.qdrantClient = qdrantClient;
@@ -63,6 +72,34 @@ public class RagService {
         this.dlpClient = dlpClient;
         this.conversationService = conversationService;
         this.auditService = auditService;
+        this.llmTelemetryService = llmTelemetryService;
+        this.llmTelemetryExecutor = llmTelemetryExecutor;
+    }
+
+    /**
+     * Fire-and-forget telemetry write (ADR-002). Never call .get()/.join() here — that would
+     * block the request thread on the same DB write we're trying to keep off the hot path.
+     * Everything, including cost/token estimation, is wrapped so a bug in this method can
+     * never surface as a broken chat response.
+     */
+    private void recordTelemetryAsync(String endpoint, long startNanos, String systemPrompt,
+                                       List<ClaudeService.ConversationMessage> messages,
+                                       String outputText, boolean success, String errorMessage) {
+        try {
+            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+            var model = claudeService.getModel();
+            var inputText = systemPrompt + messages.stream()
+                    .map(ClaudeService.ConversationMessage::content)
+                    .collect(Collectors.joining("\n"));
+            int inputTokens = LlmCostEstimator.estimateTokens(inputText);
+            int outputTokens = LlmCostEstimator.estimateTokens(outputText);
+            double costUsd = LlmCostEstimator.estimateCostUsd(model, inputTokens, outputTokens);
+            CompletableFuture.runAsync(() -> llmTelemetryService.record(
+                    endpoint, model, latencyMs, inputTokens, outputTokens, costUsd, success, errorMessage
+            ), llmTelemetryExecutor);
+        } catch (Exception e) {
+            log.warn("Failed to schedule LLM telemetry for endpoint {}: {}", endpoint, e.getMessage());
+        }
     }
 
     /**
@@ -137,8 +174,18 @@ public class RagService {
         claudeMessages.add(new ClaudeService.ConversationMessage("user", request.message()));
 
             // ── 7. Call Claude (blocking — DLP requires the complete answer) ────────
-        var rawResponse = claudeService.complete(systemPrompt, claudeMessages, STRUCTURED_CHAT_MAX_TOKENS);
+        long claudeStartNanos = System.nanoTime();
+        String rawResponse;
+        try {
+            rawResponse = claudeService.complete(systemPrompt, claudeMessages, STRUCTURED_CHAT_MAX_TOKENS);
+        } catch (RuntimeException e) {
+            recordTelemetryAsync("/api/chat", claudeStartNanos, systemPrompt, claudeMessages,
+                    "", false, e.getMessage());
+            throw e;
+        }
         var parsed = parseClaudeResponse(rawResponse);
+        recordTelemetryAsync("/api/chat", claudeStartNanos, systemPrompt, claudeMessages,
+                parsed.answer(), true, null);
 
         // ── 8. DLP — answer + each suggestion (suggestions must never bypass DLP) ──
         var dlpAnswer = dlpClient.analyze(parsed.answer(), roles);
@@ -229,8 +276,18 @@ public class RagService {
         }
         claudeMessages.add(new ClaudeService.ConversationMessage("user", request.message()));
 
-        var rawResponse = claudeService.complete(systemPrompt, claudeMessages, 2048);
+        long claudeStartNanos = System.nanoTime();
+        String rawResponse;
+        try {
+            rawResponse = claudeService.complete(systemPrompt, claudeMessages, 2048);
+        } catch (RuntimeException e) {
+            recordTelemetryAsync("/api/chat/verify", claudeStartNanos, systemPrompt, claudeMessages,
+                    "", false, e.getMessage());
+            throw e;
+        }
         var parsed = parseClaudeResponse(rawResponse);
+        recordTelemetryAsync("/api/chat/verify", claudeStartNanos, systemPrompt, claudeMessages,
+                parsed.answer(), true, null);
 
         var dlpAnswer = dlpClient.analyze(parsed.answer(), roles);
         var dlpSuggestions = parsed.suggestions().stream()
@@ -423,6 +480,7 @@ public class RagService {
         var detector      = new SentenceBoundaryDetector();
         var fullAnswer    = new StringBuilder();
         int[] dlpCount    = {0};
+        long claudeStartNanos = System.nanoTime();
 
         try {
             claudeService.streamComplete(systemPrompt, claudeMessages, STREAMING_MAX_TOKENS, token -> {
@@ -456,11 +514,17 @@ public class RagService {
             var metadata = buildMetadataJson(conversation.getId(), sources,
                     !restrictedPaths.isEmpty(), dlpCount[0], suggestions);
             emitter.send(SseEmitter.event().name("metadata").data(Objects.requireNonNull(metadata)));
+            recordTelemetryAsync("/api/chat/stream", claudeStartNanos, systemPrompt, claudeMessages,
+                    cleanedAnswer, true, null);
             emitter.complete();
 
         } catch (UncheckedIOException e) {
+            recordTelemetryAsync("/api/chat/stream", claudeStartNanos, systemPrompt, claudeMessages,
+                    fullAnswer.toString(), false, e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             emitter.completeWithError(Objects.requireNonNull(e.getCause()));
         } catch (Exception e) {
+            recordTelemetryAsync("/api/chat/stream", claudeStartNanos, systemPrompt, claudeMessages,
+                    fullAnswer.toString(), false, e.getMessage());
             try { emitter.completeWithError(e); } catch (Exception ignored) {}
         }
     }

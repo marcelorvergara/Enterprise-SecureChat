@@ -162,6 +162,7 @@ Full list of variables for your `.env` file (see [infra/.env.example](../infra/.
 | `AUTH0_AUDIENCE` | Yes | Auth0 API identifier, e.g. `api.enpsecurechat.com` |
 | `QDRANT_API_KEY` | Yes | API key for local Qdrant instance |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude access |
+| `INTERNAL_METRICS_KEY` | Yes | Shared secret (not a third-party credential) for `X-Internal-Key` on `GET /internal/llm-metrics` (ADR-002 telemetry). Generate with `openssl rand -hex 32`; the same value must be configured on the monitoring-links poller. |
 
 ---
 

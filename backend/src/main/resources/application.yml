@@ -67,6 +67,12 @@ anthropic:
   api-key: ${ANTHROPIC_API_KEY}
   model: ${CLAUDE_MODEL:claude-sonnet-4-6}
 
+# ── Internal telemetry endpoint (ADR-002) ────────────────────────────────────
+# Shared secret checked against the X-Internal-Key header on GET /internal/llm-metrics.
+# Only this backend and monitoring-links know it — never expose it to the Angular client.
+internal:
+  metrics-key: ${INTERNAL_METRICS_KEY}
+
 # ── Oil & Gas domain config ───────────────────────────────────────────────────
 og:
   # Comma-separated list of known BU names (lowercase). Used by FgaService to
