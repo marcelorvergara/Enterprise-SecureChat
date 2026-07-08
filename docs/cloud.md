@@ -151,7 +151,26 @@ For production deployment, Qdrant offers a managed cloud service at [cloud.qdran
 
 ---
 
-## 5. Environment Variables Reference
+## 5. Firestore (llm-metrics status-page read path)
+
+Firestore backs a second, independent projection of LLM telemetry — not a Neon replacement. `monitoring-links` polls `GET /internal/llm-metrics` on `securechat-backend` for the public status page, and Cloud Run's JVM cold start (~10–30 s at `min-instances=0`) made that poll slow/unreliable. Rather than pay to keep the whole backend warm (`min-instances=1`) just for a cheap read, LLM telemetry is dual-written to Firestore, and a separate Gen2 Cloud Function (`functions/llm-metrics`, negligible cold start) serves the identical JSON contract from there instead.
+
+### 5.1 Setup (one-time, per GCP project)
+
+```bash
+gcloud services enable firestore.googleapis.com cloudfunctions.googleapis.com eventarc.googleapis.com --project=$PROJECT_ID
+gcloud firestore databases create --project=$PROJECT_ID --location=us-east4 --type=firestore-native
+```
+
+Uses the `(default)` Native-mode database — nothing else in this project touches Firestore, so a named database adds a flag everywhere for no isolation benefit. Firestore's mode and location are **irreversible** once set for a project; run `gcloud firestore locations list` to confirm the target region is valid before creating.
+
+### 5.2 What's there
+
+A single `llm_telemetry` collection, written by `backend`'s `LlmTelemetryService.record()` (see root `CLAUDE.md` constraint #14) and read by `functions/llm-metrics`. No retention policy is enforced yet — see that constraint for the planned TTL mitigation.
+
+---
+
+## 6. Environment Variables Reference
 
 Full list of variables for your `.env` file (see [infra/.env.example](../infra/.env.example) for the template):
 
@@ -162,11 +181,12 @@ Full list of variables for your `.env` file (see [infra/.env.example](../infra/.
 | `AUTH0_AUDIENCE` | Yes | Auth0 API identifier, e.g. `api.enpsecurechat.com` |
 | `QDRANT_API_KEY` | Yes | API key for local Qdrant instance |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude access |
-| `INTERNAL_METRICS_KEY` | Yes | Shared secret (not a third-party credential) for `X-Internal-Key` on `GET /internal/llm-metrics` (ADR-002 telemetry). Generate with `openssl rand -hex 32`; the same value must be configured on the monitoring-links poller. |
+| `INTERNAL_METRICS_KEY` | Yes | Shared secret (not a third-party credential) for `X-Internal-Key` on `GET /internal/llm-metrics` (ADR-002 telemetry) and `llm-metrics-fn`. Generate with `openssl rand -hex 32`; the same value must be configured on the monitoring-links poller. |
+| `GCP_PROJECT_ID` | No | Defaults to `enp-securechat`. Explicit Firestore project id for the telemetry dual-write (§5) — only needed locally if you're running against a different GCP project. |
 
 ---
 
-## 6. Startup Order
+## 7. Startup Order
 
 When bringing up the full stack for the first time:
 

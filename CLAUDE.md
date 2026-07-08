@@ -48,6 +48,7 @@ See component guides for per-service dev commands:
 - [frontend/CLAUDE.md](frontend/CLAUDE.md)
 - [ingestion/CLAUDE.md](ingestion/CLAUDE.md)
 - [dlp-service/CLAUDE.md](dlp-service/CLAUDE.md)
+- [functions/llm-metrics/CLAUDE.md](functions/llm-metrics/CLAUDE.md)
 
 See [docs/](docs/) for full specs, API contracts, cloud setup, and deployment:
 - [docs/spec.md](docs/spec.md) — API contracts, data schemas, security model
@@ -68,7 +69,11 @@ Enterprise-SecureChat/
 │   ├── rag/            RagController, RagService, ParseClient, EmbedClient, IngestClient,
 │   │                   DocumentController, QdrantSearchClient, ClaudeService, DlpClient, dto/
 │   ├── security/       OgRolesAndGroupExtractor (pulls `https://enpsecurechat.com/roles` from Auth0 JWT)
-│   └── telemetry/      LlmTelemetryService (fire-and-forget) + InternalMetricsController (ADR-002)
+│   └── telemetry/      LlmTelemetryService (fire-and-forget, Postgres + Firestore dual-write) +
+│                       InternalMetricsController (ADR-002)
+├── functions/llm-metrics/
+│   ├── index.js         Gen2 Cloud Function — reads Firestore, same X-Internal-Key contract
+│   └── package.json     @google-cloud/firestore, @google-cloud/functions-framework
 ├── dlp-service/src/
 │   ├── main.py         FastAPI: POST /dlp/analyze, GET /health
 │   ├── analyzer.py     Presidio engines (module-level singletons)
@@ -156,6 +161,13 @@ Both share the same `/ingest` endpoint. Never index crawler-managed files in the
 ### 13. LLM telemetry (ADR-002) is fire-and-forget and must never touch the request thread
 `RagService` dispatches `LlmTelemetryService.record(...)` via `CompletableFuture.runAsync(...)` on the bounded `llmTelemetryExecutor` bean (core 2 / max 4, `DiscardPolicy` on a full queue) from `chat()`, `chatWithDocument()`, and `chatStream()`. Never call `.get()`/`.join()` on that future, and never make `LlmTelemetryService` a method on `RagService` itself — `@Async` self-invocation through the CGLIB proxy silently no-ops, which is why it's a separate `@Component`. `GET /internal/llm-metrics` is gated by the `X-Internal-Key` header (checked against `INTERNAL_METRICS_KEY`) instead of the Auth0 JWT filter — it's polled by `monitoring-links`, not called by a logged-in user. `SecurityConfig` permits `/internal/**`; the controller owns the entire auth decision from there. `InternalMetricsController` fails fast at boot (`IllegalStateException`) if the secret is blank/unset — `MessageDigest.isEqual` on two empty arrays returns `true`, so a blank secret without this guard would silently authenticate any request sending an empty `X-Internal-Key` header. Never remove that check. Token counts in `llm_telemetry` are a chars/4 estimate, not real Anthropic `usage` figures — getting exact counts would mean changing `ClaudeService.complete()`'s return type on every call site.
 
+### 14. LLM telemetry is dual-written to Firestore for the status-page read path — additive, not a migration
+`LlmTelemetryService.record()` writes to Postgres (as in constraint #13) **and independently** to a Firestore `llm_telemetry` collection (`(default)` Native-mode DB, `us-east4`), via `FirestoreConfig`'s `Firestore` bean. The two writes are wrapped in **separate** try/catch blocks — a Firestore failure must never affect the Postgres write, the caller, or vice versa; they are allowed to silently drift on partial failure, which is acceptable because this data is already non-critical observability (unlike `restriction_audit_log`). This exists because Cloud Run's JVM cold start (~10–30 s) made `monitoring-links`' status-page poll of `GET /internal/llm-metrics` slow/unreliable — `min-instances=1` was rejected as wasteful (pays to keep the whole backend warm for a cheap read). Instead, `functions/llm-metrics` (a Gen2 Node Cloud Function, negligible cold start) serves the identical JSON contract directly from Firestore, decoupled from the backend entirely. `GET /internal/llm-metrics` on this backend is unchanged and still available for other consumers.
+
+`FirestoreConfig.firestoreClient()`'s explicit `setProjectId(...)` guards against a real, eager failure: `FirestoreOptions.getDefaultInstance()`'s ambient project-ID resolution needs a metadata server or env var, absent in local docker-compose dev. It does **not** guard against bad credentials — the Firestore client resolves ADC lazily at the first RPC, so construction always succeeds regardless of credential validity (see `FirestoreConfigTest`). The actual safety net for missing/invalid credentials is the try/catch around the write itself in `record()`.
+
+No retention policy is enforced on the Firestore collection yet — every telemetry event adds a document forever. A Firestore TTL policy on `occurred_at` is the intended mitigation once volume warrants it; not yet applied.
+
 ## Key Configuration (application.yml)
 
 ```yaml
@@ -193,6 +205,7 @@ Roles injected via **Post-Login Action** into the `https://enpsecurechat.com/rol
 | `QDRANT_API_KEY` | backend, ingestion | Set in Qdrant via `QDRANT__SERVICE__API_KEY` |
 | `QDRANT_URL` | backend, ingestion | Cloud URL or `http://qdrant:6333` locally |
 | `CRAWLER_MODE` | ingestion | `files` (default), `html`, or `all` |
-| `INTERNAL_METRICS_KEY` | backend | Shared secret for `X-Internal-Key` on `GET /internal/llm-metrics`; must match monitoring-links' value |
+| `INTERNAL_METRICS_KEY` | backend, functions/llm-metrics | Shared secret for `X-Internal-Key` on `GET /internal/llm-metrics` and `llm-metrics-fn`; must match monitoring-links' value |
+| `GCP_PROJECT_ID` | backend | Optional, defaults to `enp-securechat`; explicit Firestore project id for `FirestoreConfig` (constraint #14) |
 
 All variables documented in `infra/.env.example`. Never commit `infra/.env`.

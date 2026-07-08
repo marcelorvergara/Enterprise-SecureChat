@@ -1,0 +1,16 @@
+{
+  "name": "llm-metrics-fn",
+  "version": "1.0.0",
+  "description": "Gen2 Cloud Function — serves the /internal/llm-metrics JSON contract from Firestore, decoupled from securechat-backend's JVM cold start.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "functions-framework --target=llmMetrics"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^8.6.0",
+    "@google-cloud/functions-framework": "^5.0.5"
+  }
+}

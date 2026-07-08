@@ -73,6 +73,13 @@ anthropic:
 internal:
   metrics-key: ${INTERNAL_METRICS_KEY}
 
+# ── GCP (Firestore) ──────────────────────────────────────────────────────────
+# Used only by FirestoreConfig for the llm_telemetry dual-write (constraint #14).
+# Explicit project id — do not rely on ADC's ambient project resolution, which is
+# absent in local docker-compose dev and would otherwise fail Spring context startup.
+gcp:
+  project-id: ${GCP_PROJECT_ID:enp-securechat}
+
 # ── Oil & Gas domain config ───────────────────────────────────────────────────
 og:
   # Comma-separated list of known BU names (lowercase). Used by FgaService to

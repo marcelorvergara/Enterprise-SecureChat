@@ -256,6 +256,8 @@ Auth: `X-Internal-Key` header, checked against `INTERNAL_METRICS_KEY` — not a 
 ```
 Token counts are a chars/4 heuristic, not Anthropic's real `usage` field — capturing exact counts would require changing `ClaudeService.complete()`'s return type across every call site. `cost_usd_24h` is accordingly an estimate, not a billing-accurate figure.
 
+`monitoring-links`' production poller instead targets the `llm-metrics-fn` Gen2 Cloud Function (see [functions/llm-metrics/CLAUDE.md](../functions/llm-metrics/CLAUDE.md)), which serves this identical JSON shape from a Firestore dual-write of the same `LlmTelemetryService.record()` call — decoupled from this backend's Cloud Run cold start (root `CLAUDE.md` constraint #14). This endpoint is unchanged and remains available for any other backend-internal consumer.
+
 ### Internal Endpoints (Docker `internal` network only)
 
 #### `POST /dlp/analyze` (dlp-service:8000)

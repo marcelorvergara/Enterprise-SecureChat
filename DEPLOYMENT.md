@@ -143,7 +143,10 @@ gcloud services enable \
   cloudscheduler.googleapis.com \
   cloudresourcemanager.googleapis.com \
   secretmanager.googleapis.com \
-  storage.googleapis.com
+  storage.googleapis.com \
+  firestore.googleapis.com \
+  cloudfunctions.googleapis.com \
+  eventarc.googleapis.com
 ```
 
 ### Phase 1 — Artifact Registry + Secret Manager
@@ -234,6 +237,76 @@ gcloud run deploy securechat-backend \
 > **Note on `backend.yml`'s redeploys:** the CI workflow's `gcloud run deploy` (Section 7) passes no `--set-env-vars`/`--set-secrets` at all — Cloud Run inherits every unspecified field from the previously serving revision, so secrets/env vars configured here (or via a one-off `gcloud run services update --update-secrets=...`) persist across ordinary code-triggered redeploys without needing to touch the workflow file. If a secret is ever missing after a deploy, it means it was never attached to any prior revision, not that CI dropped it.
 
 The frontend is deployed to Firebase Hosting — see Section 6.
+
+### Phase 4.5 — Firestore + llm-metrics Cloud Function
+
+Decouples the `monitoring-links` status-page poll from the backend's JVM cold start — see root `CLAUDE.md` constraint #14 and [docs/cloud.md §5](docs/cloud.md). One-time Firestore setup:
+
+```bash
+gcloud firestore databases create --project=$PROJECT_ID --location=$REGION --type=firestore-native
+```
+
+Uses the `(default)` database. Firestore's mode/location choice is irreversible per project — run `gcloud firestore locations list` first to confirm `$REGION` is a valid Firestore location before creating.
+
+IAM — grant the backend's runtime SA write access, and create a dedicated, least-privilege SA for the function (do not reuse the default compute SA):
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/datastore.user"
+
+gcloud iam service-accounts create llm-metrics-fn \
+  --project=$PROJECT_ID --display-name="llm-metrics Cloud Function (Firestore read-only)"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:llm-metrics-fn@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/datastore.viewer"
+
+gcloud secrets add-iam-policy-binding INTERNAL_METRICS_KEY \
+  --member="serviceAccount:llm-metrics-fn@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+Deploy the function (Gen2, Node — check `gcloud functions runtimes list --region=$REGION` for the current GA `nodejs*` runtime, as these deprecate on a rolling basis):
+
+```bash
+gcloud functions deploy llm-metrics-fn \
+  --gen2 --project=$PROJECT_ID --region=$REGION --runtime=nodejs22 \
+  --source=functions/llm-metrics --entry-point=llmMetrics --trigger-http \
+  --allow-unauthenticated \
+  --service-account=llm-metrics-fn@${PROJECT_ID}.iam.gserviceaccount.com \
+  --set-secrets=INTERNAL_METRICS_KEY=INTERNAL_METRICS_KEY:latest \
+  --memory=256Mi --timeout=30s --min-instances=0 --max-instances=5
+```
+
+**After every deploy, run the auth test — don't trust a clean exit code:**
+```bash
+FN_URL=$(gcloud functions describe llm-metrics-fn --region=$REGION --gen2 --format='value(serviceConfig.uri)')
+curl -s -o /dev/null -w "%{http_code}\n" "$FN_URL"                                  # expect 401
+curl -s -o /dev/null -w "%{http_code}\n" -H "X-Internal-Key: wrong" "$FN_URL"        # expect 401, not 403
+curl -s -H "X-Internal-Key: $INTERNAL_METRICS_KEY_VALUE" "$FN_URL"                   # expect 200 + JSON
+```
+If the wrong-key case comes back `403` instead of `401`, an org policy is silently blocking `--allow-unauthenticated` at the IAM layer, before the request ever reaches the function's own logic — a successful deploy does not rule this out.
+
+**monitoring-links cutover** — after deploying, confirm the actual function URL and hand it to whoever owns `monitoring-links`, then verify their poller was actually repointed (this exact "requested but never verified" gap is easy to miss silently):
+```bash
+gcloud functions describe llm-metrics-fn --region=$REGION --gen2 --format="value(serviceConfig.uri)"
+```
+Diff that against monitoring-links' actual configured poll target for this service before considering the cutover done.
+
+CI/CD (`.github/workflows/functions-llm-metrics.yml`) mirrors `backend.yml`'s shape but calls `gcloud functions deploy`. The `github-cicd` SA needs two additional grants beyond Section 7's list:
+```bash
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:github-cicd@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/cloudfunctions.developer"
+
+gcloud iam service-accounts add-iam-policy-binding \
+  llm-metrics-fn@${PROJECT_ID}.iam.gserviceaccount.com \
+  --member="serviceAccount:github-cicd@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
+```
 
 ### Phase 5 — Crawler Jobs
 
@@ -375,6 +448,7 @@ Workflows live in `.github/workflows/`. Each triggers only on path-filtered push
 | `ingestion.yml` | `ingestion/**` | Docker build on runner → `gcloud run deploy securechat-ingestion` |
 | `dlp.yml` | `dlp-service/**` | Docker build on runner → `gcloud run deploy securechat-dlp` |
 | `crawler.yml` | `infra/crawler-job.yaml`, `infra/mme-crawler-job.yaml`, `infra/epe-crawler-job.yaml`, **or** completion of `ingestion.yml` | `gcloud run jobs replace` for all three jobs |
+| `functions-llm-metrics.yml` | `functions/llm-metrics/**` | `gcloud functions deploy llm-metrics-fn` |
 
 ### Required GitHub Secrets
 
@@ -388,8 +462,9 @@ In GCP Console → IAM & Admin → Service Accounts → Create service account `
 
 - `roles/run.admin` — deploy Cloud Run services and update the crawler job
 - `roles/artifactregistry.writer` — push Docker images to Artifact Registry
-- `roles/iam.serviceAccountUser` — required by `gcloud run deploy` to bind the runtime service account
+- `roles/iam.serviceAccountUser` — required by `gcloud run deploy`/`gcloud functions deploy` to bind the runtime service account (also granted narrowly on the `llm-metrics-fn` SA specifically — see Phase 4.5)
 - `roles/firebase.admin` — deploy Firebase Hosting and read project metadata
+- `roles/cloudfunctions.developer` — deploy `llm-metrics-fn` (Phase 4.5)
 
 Then Keys → Add Key → JSON. Paste the downloaded JSON as the `GCP_SA_KEY` GitHub secret.
 
