@@ -1,7 +1,11 @@
 package com.enterprise.securechat.telemetry;
 
+import com.google.api.core.ApiFutureCallback;
+import com.google.api.core.ApiFutures;
 import com.google.cloud.Timestamp;
+import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
+import com.google.common.util.concurrent.MoreExecutors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -9,7 +13,6 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Deliberately its own bean rather than a method on RagService: @Async only works through
@@ -64,7 +67,27 @@ public class LlmTelemetryService {
                 doc.put("cost_usd", costUsd);
                 doc.put("success", success);
                 doc.put("error_message", errorMessage);
-                firestore.collection(FIRESTORE_COLLECTION).add(doc).get(3, TimeUnit.SECONDS);
+                // Non-blocking: a fresh Cloud Run instance's first gRPC call to Firestore can
+                // exceed several seconds establishing the channel (TLS + token exchange), which
+                // a blocking .get(timeout) would eat directly out of the bounded
+                // llmTelemetryExecutor pool (core 2/max 4). Observed in production — a cold
+                // instance's first write timed out at 3s while Postgres succeeded normally.
+                // addCallback logs the outcome without ever occupying a pool thread waiting.
+                ApiFutures.addCallback(
+                        firestore.collection(FIRESTORE_COLLECTION).add(doc),
+                        new ApiFutureCallback<DocumentReference>() {
+                            @Override
+                            public void onSuccess(DocumentReference result) {
+                                // best-effort write succeeded — nothing to do
+                            }
+
+                            @Override
+                            public void onFailure(Throwable t) {
+                                log.warn("Failed to persist LLM telemetry to Firestore for endpoint {}: {}",
+                                        endpoint, t.getMessage());
+                            }
+                        },
+                        MoreExecutors.directExecutor());
             } catch (Exception e) {
                 log.warn("Failed to persist LLM telemetry to Firestore for endpoint {}: {}", endpoint, e.getMessage());
             }

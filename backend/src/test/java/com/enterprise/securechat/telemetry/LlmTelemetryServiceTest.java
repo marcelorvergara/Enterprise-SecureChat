@@ -1,6 +1,6 @@
 package com.enterprise.securechat.telemetry;
 
-import com.google.api.core.ApiFuture;
+import com.google.api.core.ApiFutures;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
@@ -10,10 +10,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,7 +24,7 @@ class LlmTelemetryServiceTest {
     @Mock private LlmTelemetryRepository repository;
     @Mock private Firestore firestore;
     @Mock private CollectionReference collectionReference;
-    @Mock private ApiFuture<DocumentReference> apiFuture;
+    @Mock private DocumentReference documentReference;
 
     @Test
     void record_savesRowWithGivenFields() {
@@ -50,11 +48,14 @@ class LlmTelemetryServiceTest {
     }
 
     @Test
-    void record_writesToFirestoreWhenClientPresent() throws Exception {
+    void record_writesToFirestoreWhenClientPresent() {
         var service = new LlmTelemetryService(repository, firestore);
         when(firestore.collection("llm_telemetry")).thenReturn(collectionReference);
-        when(collectionReference.add(any())).thenReturn(apiFuture);
-        when(apiFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(null);
+        // Non-blocking write: no .get(timeout) anymore — a cold Cloud Run instance's first
+        // Firestore RPC can exceed a fixed timeout during gRPC channel warmup (observed in
+        // production), so the callback attaches via ApiFutures.addCallback instead of blocking
+        // the pooled llmTelemetryExecutor thread. An immediate future exercises the onSuccess path.
+        when(collectionReference.add(any())).thenReturn(ApiFutures.immediateFuture(documentReference));
 
         service.record("/api/chat", "claude-sonnet-4-6", 1234L, 100, 50, 0.0021, true, null);
 
@@ -63,7 +64,7 @@ class LlmTelemetryServiceTest {
     }
 
     @Test
-    void record_swallowsFirestoreFailuresInsteadOfThrowing() {
+    void record_swallowsFirestoreFailuresInsteadOfThrowing_synchronous() {
         var service = new LlmTelemetryService(repository, firestore);
         when(firestore.collection("llm_telemetry")).thenThrow(new RuntimeException("Firestore unavailable"));
 
@@ -71,6 +72,21 @@ class LlmTelemetryServiceTest {
 
         // The Postgres write must still have gone through — a Firestore outage is invisible
         // to the primary write path.
+        verify(repository).save(any(LlmTelemetry.class));
+    }
+
+    @Test
+    void record_swallowsFirestoreFailuresInsteadOfThrowing_asyncCallback() {
+        var service = new LlmTelemetryService(repository, firestore);
+        when(firestore.collection("llm_telemetry")).thenReturn(collectionReference);
+        // Exercises the onFailure() callback path specifically — e.g. the RPC itself fails
+        // (timeout, permission denied) rather than the call to collection()/add() throwing
+        // synchronously, which is the exact shape of the production timeout this guards against.
+        when(collectionReference.add(any()))
+                .thenReturn(ApiFutures.immediateFailedFuture(new RuntimeException("deadline exceeded")));
+
+        service.record("/api/chat", "claude-sonnet-4-6", 1234L, 100, 50, 0.0021, true, null);
+
         verify(repository).save(any(LlmTelemetry.class));
     }
 
