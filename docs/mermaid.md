@@ -29,6 +29,7 @@ flowchart TD
         Filter[JWT + Rate Limit Filter]:::backend
         RAG[RAG Orchestrator]:::backend
         DLPClient[DLP Post-Processor]:::backend
+        LlmTel[LlmTelemetryService<br/>fire-and-forget, dual-write]:::backend
     end
 
     subgraph Storage [Storage & AI]
@@ -39,6 +40,13 @@ flowchart TD
     subgraph DLPService [DLP Service · internal only]
         Presidio[Presidio · spaCy NER<br/>PII + Financial redaction]:::backend
     end
+
+    subgraph Telemetry [LLM Telemetry · ADR-002]
+        Firestore[(Firestore · llm_telemetry)]:::data
+        MetricsFn[llm-metrics-fn<br/>Gen2 Cloud Function]:::backend
+    end
+
+    MonitoringLinks[monitoring-links<br/>status-page poller]:::external
 
     %% --- Ingestion paths ---
     ANP -->|scrapes PDF / XLSX / XLS| Crawler
@@ -79,3 +87,11 @@ flowchart TD
     DLPClient <-->|Presidio analysis| Presidio
     DLPClient -->|15. Clean answer| UI
     UI -->|16. Display| User
+
+    %% --- LLM telemetry (async, off the request thread; see ADR-002 / CLAUDE.md #14) ---
+    RAG -.->|17. record, never awaited| LlmTel
+    LlmTel -->|dual-write| Postgres
+    LlmTel -->|dual-write, best-effort, independent of Postgres write| Firestore
+    MetricsFn -->|trailing-24h read| Firestore
+    MonitoringLinks -->|poll · avoids Cloud Run JVM cold start| MetricsFn
+    MonitoringLinks -.->|GET /internal/llm-metrics<br/>X-Internal-Key, other consumers| API

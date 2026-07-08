@@ -10,12 +10,13 @@ flowchart TD
     classDef identity fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
     classDef data fill:#fffde7,stroke:#fbc02d,stroke-width:2px;
     classDef ai fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px;
+    classDef external fill:#fce4ec,stroke:#c62828,stroke-width:2px;
 
     User((User)):::user
     UI[Angular Frontend]:::frontend
 
     subgraph Identity [Identity Layer]
-        Keycloak[Keycloak OIDC]:::identity
+        Auth0[Auth0 OIDC<br/>cloud · free tier]:::identity
         Postgres[(PostgreSQL · Neon)]:::identity
     end
 
@@ -26,6 +27,7 @@ flowchart TD
         Filter[JWT + Rate Limit Filter]:::backend
         RAG[RAG Orchestrator]:::backend
         DLP[DLP Post-Processor]:::backend
+        LlmTel[LlmTelemetryService<br/>fire-and-forget, dual-write]:::backend
     end
 
     subgraph Storage [Storage & AI]
@@ -33,11 +35,18 @@ flowchart TD
         LLM[Claude claude-sonnet-4-6]:::ai
     end
 
+    subgraph Telemetry [LLM Telemetry · ADR-002]
+        Firestore[(Firestore · llm_telemetry)]:::data
+        MetricsFn[llm-metrics-fn<br/>Gen2 Cloud Function]:::backend
+    end
+
+    MonitoringLinks[monitoring-links<br/>status-page poller]:::external
+
     Ingestion -->|Populates| VDB
 
-    User -->|1. Login| Keycloak
-    Keycloak -->|2. Issues JWT| UI
-    Keycloak -.->|Role data| Postgres
+    User -->|1. Login| Auth0
+    Auth0 -->|2. Issues JWT| UI
+    Auth0 -.->|Role data| Postgres
 
     User -->|3. Question| UI
     UI -->|4. Prompt + JWT| API
@@ -55,3 +64,10 @@ flowchart TD
     RAG -->|11. Scan for PII/financials| DLP
     DLP -->|12. Clean answer| UI
     UI -->|13. Display| User
+
+    RAG -.->|async, never awaited| LlmTel
+    LlmTel -->|dual-write| Postgres
+    LlmTel -->|dual-write, best-effort| Firestore
+    MetricsFn -->|trailing-24h read| Firestore
+    MonitoringLinks -->|poll · avoids Cloud Run cold start| MetricsFn
+    MonitoringLinks -.->|GET /internal/llm-metrics<br/>X-Internal-Key, other consumers| API
