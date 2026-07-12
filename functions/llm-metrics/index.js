@@ -35,12 +35,17 @@ functions.http('llmMetrics', async (req, res) => {
 
   // Field names are a cross-repo contract with monitoring-links, identical to
   // InternalMetricsController's LlmMetricsResponse on the Java backend — do not rename.
+  //
+  // avg_latency_ms / error_rate_pct: an average/rate over zero requests is undefined,
+  // not zero. null here (not 0) so the status dashboard reads "no data this window"
+  // instead of "responds instantly, never fails." requests_24h/tokens_24h/cost_usd_24h
+  // stay 0 — those are genuinely zero with no activity.
   res.status(200).json({
     requests_24h: requests,
-    avg_latency_ms: requests > 0 ? round(totalLatencyMs / requests, 1) : 0,
+    avg_latency_ms: requests > 0 ? round(totalLatencyMs / requests, 1) : null,
     tokens_24h: tokens,
     cost_usd_24h: round(costUsd, 4),
-    error_rate_pct: requests > 0 ? round((errorCount / requests) * 100, 2) : 0,
+    error_rate_pct: requests > 0 ? round((errorCount / requests) * 100, 2) : null,
   });
 });
 
