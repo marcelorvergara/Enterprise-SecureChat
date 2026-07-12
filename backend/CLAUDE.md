@@ -67,7 +67,7 @@ Do not raise the 1024 default — constraint #10 in root CLAUDE.md. Do not reduc
 | `ConversationServiceTest` | Delete success, 403 (wrong owner), 404 |
 | `AdminControllerTest` | `@WebMvcTest`; 401 unauthenticated, 403 employee, 200 admin |
 | `LlmTelemetryServiceTest` | `record()` persists; repository failures are logged, never thrown |
-| `InternalMetricsControllerTest` | `@WebMvcTest`; 401 missing/wrong `X-Internal-Key`, 200 with correct key, no JWT required |
+| `InternalMetricsControllerTest` | `@WebMvcTest`; 401 missing/wrong `X-Internal-Key`, 200 with correct key, no JWT required, zero-request window returns `null` (not `0`) for `avg_latency_ms`/`error_rate_pct` |
 
 ## Rate Limiting
 

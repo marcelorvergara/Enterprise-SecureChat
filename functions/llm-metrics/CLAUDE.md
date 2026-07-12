@@ -36,6 +36,10 @@ Byte-identical to `LlmMetricsResponse` on the backend — do not rename these fi
 }
 ```
 
+`avg_latency_ms` and `error_rate_pct` are `null` (not `0`) when `requests_24h` is `0` for that window — an average/rate over zero samples is undefined, and `0` would render on the public status dashboard as "responds instantly, never fails" instead of "no data this window." `requests_24h`/`tokens_24h`/`cost_usd_24h` stay `0` in that case since those genuinely are zero with no activity. See the `requests > 0 ? ... : null` ternaries in `index.js`.
+
+**This is a hand-maintained duplicate of `LlmTelemetryRepository`'s aggregation on the Java backend, not a shared library** — see root `CLAUDE.md` constraint #15. Any change to the aggregation logic or response shape on either side (this file's `index.js`, or `backend`'s `LlmTelemetryRepository.java`/`LlmMetricsResponse.java`) should prompt checking whether the other needs the identical change. There is no test coverage here to catch drift (see below) and no coverage on the Java side for this function either.
+
 ## Firestore
 
 Reads the `llm_telemetry` collection in the `(default)` Native-mode database (`enp-securechat`, `us-east4`), written by `backend`'s `LlmTelemetryService.record()` dual-write. Runs under the dedicated `llm-metrics-fn` service account (`roles/datastore.viewer` + `roles/secretmanager.secretAccessor` on `INTERNAL_METRICS_KEY` only) — not the default compute SA.
@@ -53,3 +57,7 @@ gcloud functions deploy llm-metrics-fn \
 ```
 
 `--allow-unauthenticated` mirrors `InternalMetricsController`'s rationale — auth is the shared-secret header, not GCP IAM invoker identity. **After every deploy, actually run the auth test** (`curl` with no header / wrong key / correct key) rather than trusting a clean `gcloud functions deploy` exit code — an org policy silently blocking `--allow-unauthenticated` would surface as a `403` from IAM before the request ever reaches this code, which looks superficially like a different failure.
+
+## Testing
+
+There is no test framework or test file in this package (`package.json` has only a `start` script) — logic changes here are verified by deploying and `curl`-ing the live function directly (see Deploy above), not by an automated suite. If this function grows enough logic to warrant one, add it deliberately rather than bolting a harness onto a single fix.

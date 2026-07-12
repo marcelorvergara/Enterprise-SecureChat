@@ -168,6 +168,13 @@ Both share the same `/ingest` endpoint. Never index crawler-managed files in the
 
 No retention policy is enforced on the Firestore collection yet — every telemetry event adds a document forever. A Firestore TTL policy on `occurred_at` is the intended mitigation once volume warrants it; not yet applied.
 
+### 15. `functions/llm-metrics` reimplements the aggregation independently — it does not call into `backend`
+Because constraint #14 decoupled the read path entirely, `InternalMetricsController`/`LlmTelemetryRepository` (Java, Postgres, `backend/src/main/java/com/enterprise/securechat/telemetry/`) and `functions/llm-metrics/index.js` (Node, Firestore) are **two separate implementations of the identical `GET /internal/llm-metrics` JSON contract**. There is no shared library between them — a bug or behavior change in one's aggregation logic does not automatically apply to the other.
+
+Concrete precedent: both independently had a null-vs-zero bug where `avg_latency_ms`/`error_rate_pct` returned `0` instead of `null` for a trailing-24h window with zero requests (an average/rate over zero samples is undefined, not zero — `0` renders on the public status dashboard as "responds instantly, never fails"). Fixed separately in `LlmTelemetryRepository.java` (dropped `COALESCE(AVG(...), 0)`, made the `errorRatePct` `CASE` return `NULL` on `COUNT(*)=0`, widened `LlmMetricsResponse.avgLatencyMs`/`errorRatePct` from primitive `double` to boxed `Double`) and in `functions/llm-metrics/index.js` (changed the `requests > 0 ? ... : 0` ternaries to `: null`). `requests_24h`/`tokens_24h`/`cost_usd_24h` are unaffected — those are genuinely `0` with no activity.
+
+**Whenever the Java aggregation query or `LlmMetricsResponse` shape changes, check whether `functions/llm-metrics/index.js` needs the same change, and vice versa** — there is no compiler or test to catch drift between them automatically. `backend`'s telemetry tests (`InternalMetricsControllerTest`) do not cover the Cloud Function; `functions/llm-metrics` has no test harness at all (see its `CLAUDE.md`).
+
 ## Key Configuration (application.yml)
 
 ```yaml
