@@ -70,6 +70,29 @@ class InternalMetricsControllerTest {
     }
 
     @Test
+    void getLlmMetrics_zeroRequestsReturnsNullAvgLatencyAndErrorRateNotZero() throws Exception {
+        // Regression guard: an average/rate over zero samples is undefined, not zero.
+        // A literal 0 here would render on the public status dashboard as "responds
+        // instantly, never fails" instead of "no data this window."
+        var agg = new LlmTelemetryRepository.TrailingAggregate() {
+            @Override public long getRequests() { return 0L; }
+            @Override public Double getAvgLatencyMs() { return null; }
+            @Override public Long getTokens() { return null; }
+            @Override public Double getCostUsd() { return 0.0; }
+            @Override public Double getErrorRatePct() { return null; }
+        };
+        when(repository.findTrailing24hAggregate()).thenReturn(agg);
+
+        mvc.perform(get("/internal/llm-metrics").header("X-Internal-Key", "test-shared-secret"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requests_24h").value(0))
+                .andExpect(jsonPath("$.avg_latency_ms").doesNotExist())
+                .andExpect(jsonPath("$.tokens_24h").value(0))
+                .andExpect(jsonPath("$.cost_usd_24h").value(0))
+                .andExpect(jsonPath("$.error_rate_pct").doesNotExist());
+    }
+
+    @Test
     void constructor_blankInternalKeyFailsFastInsteadOfBootingWithAnOpenEndpoint() {
         // If INTERNAL_METRICS_KEY is ever unset/blank in an environment (e.g. a misconfigured
         // Cloud Run secret), this must crash the app loudly on boot rather than start up with

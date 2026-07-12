@@ -46,10 +46,10 @@ public class InternalMetricsController {
         var agg = repository.findTrailing24hAggregate();
         return ResponseEntity.ok(new LlmMetricsResponse(
                 agg.getRequests(),
-                roundTo(agg.getAvgLatencyMs(), 1),
+                roundToOrNull(agg.getAvgLatencyMs(), 1),
                 agg.getTokens() != null ? agg.getTokens() : 0L,
-                roundTo(agg.getCostUsd(), 4),
-                roundTo(agg.getErrorRatePct(), 2)
+                roundToZero(agg.getCostUsd(), 4),
+                roundToOrNull(agg.getErrorRatePct(), 2)
         ));
     }
 
@@ -68,7 +68,17 @@ public class InternalMetricsController {
                 internalKey.getBytes(StandardCharsets.UTF_8));
     }
 
-    private double roundTo(Double value, int decimals) {
+    // avgLatencyMs / errorRatePct: null means "no requests in this window," not zero.
+    // Must stay null through rounding so the response can't be misread as "instant, error-free."
+    private Double roundToOrNull(Double value, int decimals) {
+        if (value == null) return null;
+        double factor = Math.pow(10, decimals);
+        return Math.round(value * factor) / factor;
+    }
+
+    // costUsd is genuinely 0 with no activity (SQL already COALESCEs it), so this one
+    // stays a zero-defaulting primitive rather than nullable.
+    private double roundToZero(Double value, int decimals) {
         if (value == null) return 0;
         double factor = Math.pow(10, decimals);
         return Math.round(value * factor) / factor;
